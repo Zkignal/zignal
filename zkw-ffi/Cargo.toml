@@ -1,0 +1,29 @@
+[package]
+name = "zkw-ffi"
+version = "0.2.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "Swift bindings (UniFFI) for zkw-core."
+
+[lib]
+name = "zkw_ffi"
+# staticlib -> linked into the iOS app; cdylib -> used by uniffi-bindgen to read the interface
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+zkw-core = { path = "../zkw-core" }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+# Argon2 (64 MiB) is slow in unoptimized builds; optimize dependencies even for tests.
+[profile.dev.package."*"]
+opt-level = 3
