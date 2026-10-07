@@ -1,0 +1,31 @@
+[package]
+name = "zkw-core"
+version = "0.2.0"
+edition = "2021"
+publish = false
+license = "LicenseRef-Proprietary"
+description = "Private messaging core for Zcash shielded memos: 512-byte envelope, hybrid PQXDH handshake, header-encrypted Double Ratchet, duress vault."
+
+[lib]
+# staticlib = the .a file linked into the iOS app later (via UniFFI / XCFramework)
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+ml-kem = { version = "0.2", features = ["deterministic", "zeroize"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true
