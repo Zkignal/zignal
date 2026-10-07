@@ -25,6 +25,9 @@ pub const L_SIG_PQSPK: &[u8] = b"zkw/sig/pqspk/v1";
 pub const L_SAFETY: &[u8] = b"zkw/safety/v1";
 pub const L_VAULT: &[u8] = b"zkw/vault/v1";
 pub const L_ID_BIND: &[u8] = b"zkw/sig/id-bind/v1";
+pub const L_STATE: &[u8] = b"zkw/state/v1";
+pub const L_PROFILE_ID: &[u8] = b"zkw/profile/identity/v1";
+pub const L_PROFILE_STATE: &[u8] = b"zkw/profile/state-key/v1";
 
 pub const MLKEM768_PK_LEN: usize = 1184;
 pub const MLKEM768_CT_LEN: usize = 1088;

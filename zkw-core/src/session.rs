@@ -335,11 +335,11 @@ pub struct Inbox {
     pub me: Identity,
     pub prekeys: PrekeyStore,
     pub sessions: HashMap<[u8; 32], Session>,
-    invite_addrs: HashMap<[u8; 16], Vec<u8>>,
-    outgoing_hellos: HashMap<[u8; 16], Vec<u8>>,
+    pub(crate) invite_addrs: HashMap<[u8; 16], Vec<u8>>,
+    pub(crate) outgoing_hellos: HashMap<[u8; 16], Vec<u8>>,
     pub requests: HashMap<[u8; 16], ContactRequest>,
-    seen_eks: HashMap<[u8; 32], u64>,
-    reasm: Reassembler,
+    pub(crate) seen_eks: HashMap<[u8; 32], u64>,
+    pub(crate) reasm: Reassembler,
 }
 
 impl Inbox {

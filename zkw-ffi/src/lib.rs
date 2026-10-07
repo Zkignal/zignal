@@ -276,11 +276,105 @@ pub fn protocol_version() -> String {
     zkw_core::PROTOCOL.to_string()
 }
 
+
+// ---------------- persistence (save/restore across app restarts) ----------------
+
+/// Keys derived from one profile secret (the wallet seed stored in the duress vault).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ProfileKeys {
+    /// Pass to `ZkwInbox(seed:)` / `ZkwInbox.restore`.
+    pub identity_seed: Vec<u8>,
+    /// Encrypts saved chat state. Keep in memory only; re-derive after unlock.
+    pub state_key: Vec<u8>,
+}
+
+/// A pending contact request (someone sent us a HELLO). Shown in the Requests inbox.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ZkwRequest {
+    pub hello_id: Vec<u8>,
+    pub peer: Vec<u8>,
+    pub address: Vec<u8>,
+}
+
+fn key32(k: &[u8]) -> Result<[u8; 32], ZkwError> {
+    k.try_into().map_err(|_| ZkwError::InvalidInput("state key must be 32 bytes".into()))
+}
+
+#[uniffi::export]
+pub fn profile_keys(profile_secret: Vec<u8>) -> Result<ProfileKeys, ZkwError> {
+    let (id, st) = zkw_core::persist::profile_keys(&profile_secret)?;
+    Ok(ProfileKeys { identity_seed: id.to_vec(), state_key: st.to_vec() })
+}
+
+#[uniffi::export]
+impl ZkwInbox {
+    /// Restore from `export_sealed` output. Fails on wrong key, tampering, or a different identity.
+    #[uniffi::constructor]
+    pub fn restore(identity_seed: Vec<u8>, state_key: Vec<u8>, sealed_state: Vec<u8>) -> Result<Arc<Self>, ZkwError> {
+        let id = Identity::from_seed(&identity_seed)?;
+        let clear = zkw_core::persist::open_state(&key32(&state_key)?, &sealed_state)?;
+        let json = String::from_utf8(clear).map_err(|_| ZkwError::Crypto("bad saved state".into()))?;
+        Ok(Arc::new(Self { inner: Mutex::new(Inbox::import(id, &json)?) }))
+    }
+
+    /// Encrypted snapshot of all chat state. Save after every send/receive.
+    pub fn export_sealed(&self, state_key: Vec<u8>) -> Result<Vec<u8>, ZkwError> {
+        let json = self.lock()?.export()?;
+        Ok(zkw_core::persist::seal_state(&key32(&state_key)?, json.as_bytes())?)
+    }
+
+    /// Call on app launch; rotates prekeys weekly. Save state afterwards if it returns true.
+    pub fn rotate_prekeys_if_due(&self, now: u64) -> Result<bool, ZkwError> {
+        Ok(self.lock()?.rotate_prekeys_if_due(now))
+    }
+
+    pub fn requests(&self) -> Result<Vec<ZkwRequest>, ZkwError> {
+        Ok(self
+            .lock()?
+            .requests
+            .values()
+            .map(|r| ZkwRequest { hello_id: r.hello_id.to_vec(), peer: r.ik_sig.to_vec(), address: r.address.clone() })
+            .collect())
+    }
+
+    /// The per-contact Zcash address we send to for this contact.
+    pub fn contact_address(&self, peer: Vec<u8>) -> Result<Vec<u8>, ZkwError> {
+        let key = peer_key(&peer)?;
+        Ok(self.lock()?.sessions.get(&key).ok_or(ZkwError::UnknownPeer)?.peer_addr.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const NOW: u64 = 1_790_000_000;
+
+    #[test]
+    fn swift_api_restore_after_restart() {
+        let keys = profile_keys(vec![9u8; 64]).unwrap();
+        let alice = ZkwInbox::new(vec![b'A'; 32], NOW).unwrap();
+        let bob = ZkwInbox::new(keys.identity_seed.clone(), NOW).unwrap();
+        let invite = bob.create_invite(b"utest1bob".to_vec()).unwrap();
+        let out = alice.start_from_invite(invite, b"utest1alice".to_vec(), "hi".into()).unwrap();
+        for m in out.memos {
+            bob.receive(m, NOW).unwrap();
+        }
+        let sealed = bob.export_sealed(keys.state_key.clone()).unwrap();
+        drop(bob);
+
+        assert!(ZkwInbox::restore(keys.identity_seed.clone(), vec![0u8; 32], sealed.clone()).is_err(), "wrong key");
+        let bob = ZkwInbox::restore(keys.identity_seed.clone(), keys.state_key.clone(), sealed).unwrap();
+        let alice_id = alice.my_id().unwrap();
+        assert_eq!(bob.contacts().unwrap(), vec![alice_id.clone()]);
+        assert_eq!(bob.contact_address(alice_id.clone()).unwrap(), b"utest1alice");
+
+        let reply = bob.send_text(alice_id, "still here".into(), NOW).unwrap();
+        let got: Vec<_> = reply.memos.into_iter().filter_map(|m| alice.receive(m, NOW).unwrap()).collect();
+        assert_eq!(got, vec![ZkwEvent::Message { peer: bob.my_id().unwrap(), text: "still here".into() }]);
+        assert!(bob.requests().unwrap().is_empty());
+        assert!(!bob.rotate_prekeys_if_due(NOW).unwrap());
+    }
 
     #[test]
     fn swift_api_end_to_end() {

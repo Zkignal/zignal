@@ -6,6 +6,7 @@
 pub mod envelope;
 pub mod error;
 pub mod identity;
+pub mod persist;
 pub mod primitives;
 pub mod ratchet;
 pub mod session;

@@ -82,6 +82,8 @@ pub struct PqPrekey {
     pub id: u32,
     pub dk: p::MlKemDk,
     pub pk: Vec<u8>,
+    /// FIPS 203 seed (d || z); lets the key be persisted and re-derived.
+    pub seed: [u8; 64],
     pub created: u64,
 }
 
@@ -92,7 +94,7 @@ pub struct PrekeyStore {
     pub pqspks: BTreeMap<u32, PqPrekey>,
     pub current_spk: u32,
     pub current_pqspk: u32,
-    next_id: u32,
+    pub(crate) next_id: u32,
 }
 
 impl PrekeyStore {
@@ -121,13 +123,15 @@ impl PrekeyStore {
         self.current_spk = sid;
         let pid = self.next_id;
         self.next_id += 1;
-        let (dk, pk) = p::mlkem_gen();
+        let seed: [u8; 64] = p::rand_array();
+        let (dk, pk) = p::mlkem_from_seed(&seed).expect("64-byte seed is always valid");
         self.pqspks.insert(
             pid,
             PqPrekey {
                 id: pid,
                 dk,
                 pk,
+                seed,
                 created: now,
             },
         );
