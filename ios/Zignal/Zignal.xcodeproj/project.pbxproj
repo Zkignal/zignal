@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		06E7F1D93076B5BD0027752B /* ZcashLightClientKit in Frameworks */ = {isa = PBXBuildFile; productRef = 06E7F1D83076B5BD0027752B /* ZcashLightClientKit */; };
+		A1C0FFEE0000000000000002 /* ZkwFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000001 /* ZkwFFI.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,6 +32,7 @@
 		06E7F1AF3076B3970027752B /* Zignal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zignal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		06E7F1BC3076B3980027752B /* ZignalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZignalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		06E7F1C63076B3980027752B /* ZignalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZignalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1C0FFEE0000000000000001 /* ZkwFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ZkwFFI.xcframework; path = "../../zkw-ffi/out/ZkwFFI.xcframework"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -56,6 +58,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				06E7F1D93076B5BD0027752B /* ZcashLightClientKit in Frameworks */,
+				A1C0FFEE0000000000000002 /* ZkwFFI.xcframework in Frameworks */,
 			);
 		};
 		06E7F1B93076B3980027752B /* Frameworks */ = {
@@ -77,6 +80,7 @@
 				06E7F1B13076B3970027752B /* Zignal */,
 				06E7F1BF3076B3980027752B /* ZignalTests */,
 				06E7F1C93076B3980027752B /* ZignalUITests */,
+				A1C0FFEE0000000000000001 /* ZkwFFI.xcframework */,
 				06E7F1B03076B3970027752B /* Products */,
 			);
 			sourceTree = "<group>";
