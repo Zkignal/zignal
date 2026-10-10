@@ -35,11 +35,16 @@ class EnvelopeTests(unittest.TestCase):
         env = E.Envelope(E.T_MSG, b"t" * 8, 0, 1, b"i" * 8, b"hello")
         memo = env.encode()
         self.assertEqual(len(memo), 512)
+        self.assertEqual(memo[0], 0xFF)  # ZIP-302 arbitrary data, never parsed as text
         self.assertEqual(E.Envelope.decode(memo), env)
 
     def test_foreign_memos_ignored(self):
         self.assertIsNone(E.Envelope.decode(b"Thanks for lunch".ljust(512, b"\0")))
-        self.assertIsNone(E.Envelope.decode(b"ZW" + b"\x09" + bytes(509)))  # unknown version
+        self.assertIsNone(E.Envelope.decode(b"\xffZW" + b"\x09" + bytes(508)))  # unknown version
+        self.assertIsNone(E.Envelope.decode(b"\xffXY\x02" + bytes(508)))  # someone else's binary memo
+        old = bytearray(b"ZW\x01\x10" + bytes(508))  # a v0.2 memo (no 0xFF prefix)
+        old[13] = 1
+        self.assertIsNone(E.Envelope.decode(bytes(old)))
         self.assertIsNone(E.Envelope.decode(b"short"))
 
     def test_chunking_out_of_order(self):
@@ -100,7 +105,8 @@ class SessionTests(unittest.TestCase):
     def test_max_single_memo_text(self):
         alice, bob, _, _ = pair()
         a2b = alice.sessions[bob.me.sig_pub.hex()]
-        self.assertEqual(len(a2b.send_text("x" * 403, NOW)), 1)
+        self.assertEqual(len(a2b.send_text("x" * 402, NOW)), 1)
+        self.assertEqual(len(a2b.send_text("x" * 403, NOW)), 2)
         self.assertEqual(len(a2b.send_text("x" * 404, NOW)), 2)
 
     def test_long_message_chunked(self):
@@ -170,8 +176,8 @@ class SessionTests(unittest.TestCase):
         a2b = alice.sessions[bob.me.sig_pub.hex()]
         r = a2b.send(K_RECEIPT, b"\x00" * 8, NOW)[0]
         x = a2b.send(K_REACTION, b"+1", NOW)[0]
-        self.assertEqual(r[3], E.T_MSG)
-        self.assertEqual(x[3], E.T_MSG)
+        self.assertEqual(E.Envelope.decode(r).type, E.T_MSG)
+        self.assertEqual(E.Envelope.decode(x).type, E.T_MSG)
         kinds = [e.kind for e in deliver(bob, [r, x])]
         self.assertEqual(kinds, ["receipt", "reaction"])
 

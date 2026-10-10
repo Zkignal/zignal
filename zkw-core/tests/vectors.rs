@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use zkw_core::envelope::{Envelope, T_MSG};
+use zkw_core::envelope::{Envelope, HEADER_LEN, T_MSG};
 use zkw_core::primitives as p;
 use zkw_core::ratchet::{kdf_ck, kdf_rk, msg_seal};
 use zkw_core::session::{conv_tag, id_key, pqxdh_kdf};
@@ -101,6 +101,6 @@ fn envelope_layout() {
         body: hx(&e["body"]),
     };
     let memo = env.encode(Some(&[0u8; 512])).unwrap();
-    assert_eq!(hex::encode(&memo[..31]), e["memo_head"].as_str().unwrap());
+    assert_eq!(hex::encode(&memo[..HEADER_LEN + 7]), e["memo_head"].as_str().unwrap());
     assert_eq!(hex::encode(Sha256::digest(memo)), e["memo_sha256"].as_str().unwrap());
 }

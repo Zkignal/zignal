@@ -1,19 +1,21 @@
-"""Fixed 512-byte memo envelope and chunking (spec section 7, revised in v0.2).
+"""Fixed 512-byte memo envelope and chunking (protocol v0.3).
 
 Layout (all integers big-endian):
-  0   2  magic "ZW"
-  2   1  version (0x01)
-  3   1  type
-  4   8  conv_tag
-  12  1  chunk_index (0-based)
-  13  1  chunk_total (1..MAX_CHUNKS)
-  14  8  msg_id (random; shared by all chunks of one logical message)
-  22  2  body_len
-  24  n  body
-  24+n   random padding to 512
+  0   1  0xFF (ZIP-302: "arbitrary data", so wallets never parse the memo as text)
+  1   2  magic "ZW"
+  3   1  version (0x02)
+  4   1  type
+  5   8  conv_tag
+  13  1  chunk_index (0-based)
+  14  1  chunk_total (1..MAX_CHUNKS)
+  15  8  msg_id (random; shared by all chunks of one logical message)
+  23  2  body_len
+  25  n  body
+  25+n   random padding to 512
 
-v0.2 change from v0.1: a 2-byte body_len was added (offset 22) so random padding
-can be stripped, and chunk index/total are one byte each.
+v0.3 change from v0.2: the leading 0xFF byte. ZIP-302 reads any memo whose first byte is
+0xF4 or below as UTF-8 text; v0.2 memos started with "ZW" (0x5A), so wallets and the Zcash
+SDK rejected them as invalid text. Envelope version is now 2; v0.2 memos are not accepted.
 """
 from __future__ import annotations
 
@@ -24,10 +26,11 @@ from dataclasses import dataclass
 from . import primitives as P
 
 MEMO_LEN = 512
-HEADER_LEN = 24
-MAX_BODY = MEMO_LEN - HEADER_LEN  # 488
+ZIP302_ARBITRARY = 0xFF
+HEADER_LEN = 25
+MAX_BODY = MEMO_LEN - HEADER_LEN  # 487
 MAGIC = b"ZW"
-VERSION = 1
+VERSION = 2
 MAX_CHUNKS = 15
 
 T_HELLO = 0x01
@@ -59,8 +62,9 @@ class Envelope:
             raise P.CryptoError("bad chunk numbering")
         if len(self.body) > MAX_BODY:
             raise P.CryptoError("body too large")
-        head = MAGIC + bytes([VERSION, self.type]) + self.conv_tag + bytes([self.chunk_index, self.chunk_total]) \
-            + self.msg_id + struct.pack(">H", len(self.body))
+        head = bytes([ZIP302_ARBITRARY]) + MAGIC + bytes([VERSION, self.type]) + self.conv_tag \
+            + bytes([self.chunk_index, self.chunk_total]) + self.msg_id + struct.pack(">H", len(self.body))
+        assert len(head) == HEADER_LEN
         fill = MEMO_LEN - HEADER_LEN - len(self.body)
         pad = P.rand(fill) if pad is None else pad[:fill]
         out = head + self.body + pad
@@ -70,16 +74,16 @@ class Envelope:
     @classmethod
     def decode(cls, memo: bytes) -> "Envelope | None":
         """Returns None for memos that are not ours (plain wallet memos, other apps)."""
-        if len(memo) != MEMO_LEN or memo[:2] != MAGIC:
+        if len(memo) != MEMO_LEN or memo[0] != ZIP302_ARBITRARY or memo[1:3] != MAGIC:
             return None
-        if memo[2] != VERSION:
+        if memo[3] != VERSION:
             return None
-        t = memo[3]
-        idx, total = memo[12], memo[13]
-        blen = struct.unpack(">H", memo[22:24])[0]
+        t = memo[4]
+        idx, total = memo[13], memo[14]
+        blen = struct.unpack(">H", memo[23:25])[0]
         if t not in KNOWN_TYPES or blen > MAX_BODY or not (1 <= total <= MAX_CHUNKS and idx < total):
             return None
-        return cls(t, memo[4:12], idx, total, memo[14:22], memo[24:24 + blen])
+        return cls(t, memo[5:13], idx, total, memo[15:23], memo[HEADER_LEN:HEADER_LEN + blen])
 
 
 def split(type_: int, conv_tag: bytes, payload: bytes, msg_id: bytes | None = None) -> list[bytes]:

@@ -48,11 +48,22 @@ fn envelope_roundtrip_and_foreign_memos() {
     };
     let memo = env.encode(None).unwrap();
     assert_eq!(memo.len(), 512);
+    assert_eq!(memo[0], 0xFF); // ZIP-302 arbitrary data, never parsed as text
     assert_eq!(Envelope::decode(&memo), Some(env));
     let mut plain = b"Thanks for lunch".to_vec();
     plain.resize(512, 0);
     assert_eq!(Envelope::decode(&plain), None);
     assert_eq!(Envelope::decode(b"short"), None);
+    let mut unknown_version = b"\xffZW\x09".to_vec();
+    unknown_version.resize(512, 0);
+    assert_eq!(Envelope::decode(&unknown_version), None);
+    let mut other_app = b"\xffXY\x02".to_vec();
+    other_app.resize(512, 0);
+    assert_eq!(Envelope::decode(&other_app), None);
+    let mut v02 = b"ZW\x01\x10".to_vec(); // a v0.2 memo (no 0xFF prefix)
+    v02.resize(512, 0);
+    v02[13] = 1;
+    assert_eq!(Envelope::decode(&v02), None);
 }
 
 #[test]
@@ -134,11 +145,11 @@ fn invite_flow_and_long_conversation() {
 }
 
 #[test]
-fn single_memo_limit_is_403_bytes() {
+fn single_memo_limit_is_402_bytes() {
     let (mut alice, bob, _, _) = pair("x");
     let s = a2b(&mut alice, &bob);
-    assert_eq!(s.send_text(&"x".repeat(403), NOW).unwrap().len(), 1);
-    assert_eq!(s.send_text(&"x".repeat(404), NOW).unwrap().len(), 2);
+    assert_eq!(s.send_text(&"x".repeat(402), NOW).unwrap().len(), 1);
+    assert_eq!(s.send_text(&"x".repeat(403), NOW).unwrap().len(), 2);
 }
 
 #[test]
@@ -239,8 +250,8 @@ fn receipts_and_reactions_look_like_messages() {
     let (mut alice, mut bob, _, _) = pair("x");
     let r = a2b(&mut alice, &bob).send(K_RECEIPT, &[0u8; 8], NOW).unwrap();
     let x = a2b(&mut alice, &bob).send(K_REACTION, b"+1", NOW).unwrap();
-    assert_eq!(r[0][3], e::T_MSG);
-    assert_eq!(x[0][3], e::T_MSG);
+    assert_eq!(Envelope::decode(&r[0]).unwrap().kind, e::T_MSG);
+    assert_eq!(Envelope::decode(&x[0]).unwrap().kind, e::T_MSG);
     assert!(matches!(deliver(&mut bob, &r, NOW)[..], [Event::Receipt { .. }]));
     assert!(matches!(deliver(&mut bob, &x, NOW)[..], [Event::Reaction { .. }]));
 }

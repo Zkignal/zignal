@@ -1,17 +1,22 @@
-//! Fixed 512-byte memo envelope and chunking. Layout matches the Python reference:
+//! Fixed 512-byte memo envelope and chunking (protocol v0.3). Layout matches the Python
+//! reference:
 //!
 //! ```text
-//! 0   2  magic "ZW"
-//! 2   1  version (0x01)
-//! 3   1  type
-//! 4   8  conv_tag
-//! 12  1  chunk_index (0-based)
-//! 13  1  chunk_total (1..=15)
-//! 14  8  msg_id
-//! 22  2  body_len (big-endian)
-//! 24  n  body
-//! 24+n   random padding to 512
+//! 0   1  0xFF (ZIP-302 "arbitrary data": wallets never parse the memo as text)
+//! 1   2  magic "ZW"
+//! 3   1  version (0x02)
+//! 4   1  type
+//! 5   8  conv_tag
+//! 13  1  chunk_index (0-based)
+//! 14  1  chunk_total (1..=15)
+//! 15  8  msg_id
+//! 23  2  body_len (big-endian)
+//! 25  n  body
+//! 25+n   random padding to 512
 //! ```
+//!
+//! v0.3 added the leading 0xFF. ZIP-302 reads a memo whose first byte is 0xF4 or below as
+//! UTF-8 text, so v0.2 memos (starting "ZW") were rejected by wallets and the Zcash SDK.
 
 use std::collections::HashMap;
 
@@ -19,10 +24,11 @@ use crate::error::{fail, Result};
 use crate::primitives as p;
 
 pub const MEMO_LEN: usize = 512;
-pub const HEADER_LEN: usize = 24;
-pub const MAX_BODY: usize = MEMO_LEN - HEADER_LEN; // 488
+pub const ZIP302_ARBITRARY: u8 = 0xFF;
+pub const HEADER_LEN: usize = 25;
+pub const MAX_BODY: usize = MEMO_LEN - HEADER_LEN; // 487
 pub const MAGIC: &[u8; 2] = b"ZW";
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
 pub const MAX_CHUNKS: usize = 15;
 
 pub const T_HELLO: u8 = 0x01;
@@ -64,14 +70,15 @@ impl Envelope {
             return fail("body too large");
         }
         let mut out = [0u8; MEMO_LEN];
-        out[..2].copy_from_slice(MAGIC);
-        out[2] = VERSION;
-        out[3] = self.kind;
-        out[4..12].copy_from_slice(&self.conv_tag);
-        out[12] = self.chunk_index;
-        out[13] = self.chunk_total;
-        out[14..22].copy_from_slice(&self.msg_id);
-        out[22..24].copy_from_slice(&(self.body.len() as u16).to_be_bytes());
+        out[0] = ZIP302_ARBITRARY;
+        out[1..3].copy_from_slice(MAGIC);
+        out[3] = VERSION;
+        out[4] = self.kind;
+        out[5..13].copy_from_slice(&self.conv_tag);
+        out[13] = self.chunk_index;
+        out[14] = self.chunk_total;
+        out[15..23].copy_from_slice(&self.msg_id);
+        out[23..25].copy_from_slice(&(self.body.len() as u16).to_be_bytes());
         let end = HEADER_LEN + self.body.len();
         out[HEADER_LEN..end].copy_from_slice(&self.body);
         let fill = MEMO_LEN - end;
@@ -87,19 +94,19 @@ impl Envelope {
 
     /// Returns None for memos that are not ours (plain wallet memos, other apps).
     pub fn decode(memo: &[u8]) -> Option<Self> {
-        if memo.len() != MEMO_LEN || &memo[..2] != MAGIC || memo[2] != VERSION {
+        if memo.len() != MEMO_LEN || memo[0] != ZIP302_ARBITRARY || &memo[1..3] != MAGIC || memo[3] != VERSION {
             return None;
         }
-        let kind = memo[3];
-        let (idx, total) = (memo[12], memo[13]);
-        let blen = u16::from_be_bytes([memo[22], memo[23]]) as usize;
+        let kind = memo[4];
+        let (idx, total) = (memo[13], memo[14]);
+        let blen = u16::from_be_bytes([memo[23], memo[24]]) as usize;
         if !known_type(kind) || blen > MAX_BODY || total == 0 || total as usize > MAX_CHUNKS || idx >= total {
             return None;
         }
         let mut conv_tag = [0u8; 8];
-        conv_tag.copy_from_slice(&memo[4..12]);
+        conv_tag.copy_from_slice(&memo[5..13]);
         let mut msg_id = [0u8; 8];
-        msg_id.copy_from_slice(&memo[14..22]);
+        msg_id.copy_from_slice(&memo[15..23]);
         Some(Self {
             kind,
             conv_tag,

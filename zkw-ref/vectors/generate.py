@@ -29,7 +29,7 @@ def build() -> dict:
     kem = P.mlkem_from_seed(bytes(range(64)))
     env = E.Envelope(E.T_MSG, b"\xaa" * 8, 0, 1, b"\xbb" * 8, b"payload").encode(pad=bytes(512))
     return {
-        "protocol": "zkw v0.2",
+        "protocol": "zkw v0.3",
         "identity": {
             "seed_a": h(bytes(range(32))),
             "a_sig_pub": h(a.sig_pub), "a_dh_pub": h(a.dh_pub),
@@ -49,7 +49,7 @@ def build() -> dict:
                                "pub_sha256": hashlib.sha256(P.mlkem_pub_bytes(kem)).hexdigest()},
         "envelope_zero_pad": {"type": E.T_MSG, "conv_tag": "aa" * 8, "msg_id": "bb" * 8,
                               "body": h(b"payload"), "memo_sha256": hashlib.sha256(env).hexdigest(),
-                              "memo_head": h(env[:31])},
+                              "memo_head": h(env[:E.HEADER_LEN + 7])},
     }
 
 

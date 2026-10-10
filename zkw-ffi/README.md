@@ -1,25 +1,39 @@
 # zkw-ffi: Swift bindings for zkw-core
-Not audited.
 
-## Build (Mac, Terminal)
+Not audited. Builds `zkw-core` for iOS and generates its Swift API with UniFFI.
+
+## Build (macOS)
+
 ```bash
-cd ~/Documents/Zignal/zkw-ffi
-./build-ios.sh 2>&1 | tee build-output.txt
+./build-ios.sh
 ```
-Produces `out/ZkwFFI.xcframework` and `out/swift/zkw_ffi.swift`.
+
+The script:
+1. Runs the binding tests.
+2. Builds for iOS devices and the simulator.
+3. Produces `out/ZkwFFI.xcframework`.
+4. Copies the generated `zkw_ffi.swift` into `../ios/Zignal/Zignal/Generated/`.
+
+The app links the framework statically (Do Not Embed).
 
 ## Swift API (what the app calls)
-```swift
-let inbox = try ZkwInbox(seed: seed32, now: UInt64(Date().timeIntervalSince1970))
-let qr = try inbox.createInvite(myAddress: perContactUA)                 // show as QR
-let out = try inbox.startFromInvite(invite: scanned, myAddress: ua, firstText: "hi")
-// wallet: send out.memos as ONE shielded tx to out.toAddress
-if let ev = try inbox.receive(memo: memo512, now: now) { /* switch on ev */ }
-let vault = try vaultCreate(realPin:..., realSecret:..., duressPin:..., decoySecret:..., wipeRealOnDuress: false)
-let u = try vaultUnlock(vault: vault, pin: entered)   // u.secret == nil -> wrong PIN
-```
 
-## Known gap (next core task)
-Inbox state (sessions, prekeys, replay sets) lives in memory only. Before the
-demo it needs `export`/`import` so chats survive an app restart. Sessions
-already serialize; prekeys and the inbox wrapper do not yet.
+```swift
+// Profiles: two secrets in one duress vault
+let vault = try vaultCreate(realPin: real, realSecret: s1, duressPin: duress, decoySecret: s2,
+                            wipeRealOnDuress: false)
+let opened = try vaultUnlock(vault: vault, pin: entered)   // opened.secret == nil -> wrong PIN
+let keys = try profileKeys(profileSecret: secret)          // identitySeed + stateKey
+
+// Inbox: create, save after every change, restore after an app restart
+let inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
+let saved = try inbox.exportSealed(stateKey: keys.stateKey)
+let restored = try ZkwInbox.restore(identitySeed: keys.identitySeed, stateKey: keys.stateKey,
+                                    sealedState: saved)
+
+// Contacts and messages
+let invite = try inbox.createInvite(myAddress: perContactAddress)      // show as QR / link
+let out = try inbox.startFromInvite(invite: scanned, myAddress: ua, firstText: "hi")
+// wallet: send out.memos as ONE shielded transaction to out.toAddress
+if let event = try inbox.receive(memo: memo512, now: now) { /* switch on event */ }
+```

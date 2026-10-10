@@ -1,9 +1,9 @@
-# zkw reference implementation (protocol v0.2)
-CONFIDENTIAL. Not audited. Reference only; do not use with real funds or secrets.
+# zkw reference implementation (protocol v0.3)
+Not audited. Reference only; do not use with real funds or secrets.
 
-Python reference for the private Zcash-memo messenger. Its job: prove the design
-works and pin down exact bytes, so the iOS port (Rust via UniFFI, or Swift) can be
-checked against `vectors/test_vectors.json`.
+Python reference for Zignal, an end-to-end encrypted messenger over Zcash memos. Its job:
+prove the design works and pin down exact bytes, so other implementations (the Rust core in
+`../zkw-core`) can be checked against `vectors/test_vectors.json`.
 
 ## Run
 ```
@@ -37,11 +37,11 @@ Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
 - Duress vault: real PIN, duress PIN, wrong PIN, identical file size, silent wipe, no wipe by default
 
 ## Measured sizes
-- Single-memo text: up to 403 bytes (512 minus 24 envelope, 68 encrypted header, 16 tag, 1 kind byte)
+- Single-memo text: up to 402 bytes (512 minus 25 envelope, 68 encrypted header, 16 tag, 1 kind byte)
 - Handshake (INIT plus first message): 4 memos in one transaction
 - Duress vault file: 2,124 bytes. Production PIN derivation: about 0.1 s to unlock on this machine (Argon2id, 64 MiB)
 
-## Changes from spec v0.1 (fold into v0.2 spec)
+## Design decisions (v0.2, plus the v0.3 memo marker)
 1. **AEAD fixed:** ChaCha20-Poly1305.
 2. **Envelope:** added a 2-byte `body_len` at offset 22 so random padding can be stripped; chunk index and total are 1 byte each. Header is 24 bytes; max body 488.
 3. **Safety number:** SHA-512 (not SHA-256), so 60 digits come from 60 bytes.
@@ -50,15 +50,17 @@ Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
 6. **All post-handshake traffic is type MSG:** the real kind (text, receipt, reaction, close) is inside the encryption.
 7. **conv_tag epoch:** one day; receivers accept yesterday, today and tomorrow.
 8. **Duress wipe:** the app can't know which slot is real, so the wipe flag is stored encrypted inside the decoy slot.
+9. **v0.3: ZIP-302 marker.** Every memo starts with `0xFF`, which ZIP-302 defines as arbitrary binary data. Wallets read any first byte of `0xF4` or below as UTF-8 text, so v0.2 memos (starting "ZW") were rejected by the Zcash SDK. The header is now 25 bytes and the envelope version is 2.
 
-## Known limits / to do in the port
-- Python can't zeroize memory. Rust/Swift must wipe message keys, chain keys and PINs after use.
+## Known limits
+- Python can't zeroize memory. The Rust core wipes message keys, chain keys and vault keys
+  after use.
 - Argon2id parameters should be tuned on a real iPhone (target about 0.5 s).
-- Prekey rotation timing, multi-device, and groups are out of scope for the hackathon.
-- Zcash plumbing (building the shielded transaction, reading memos) is the wallet's job. This code only produces and consumes 512-byte memos.
+- Multi-device and groups are out of scope for the hackathon.
+- Zcash plumbing (building the shielded transaction, reading memos) is the wallet's job.
+  This code only produces and consumes 512-byte memos.
 
-## Port plan (on the Mac)
-1. Allow crates.io, or build on the Mac.
-2. Rust crate mirroring these modules: x25519-dalek, ed25519-dalek, ml-kem, chacha20poly1305, hkdf, argon2.
-3. Pass every value in `vectors/test_vectors.json`, then port the end-to-end tests.
-4. UniFFI bindings into the Zodl iOS fork as the `MessagingCryptoClient` and `EnvelopeCodecClient` dependencies.
+## Implementations
+- `../zkw-core` (Rust) matches every value in `vectors/test_vectors.json` and passes the
+  ported end-to-end tests.
+- `../zkw-ffi` exposes the Rust core to Swift for the iOS app.

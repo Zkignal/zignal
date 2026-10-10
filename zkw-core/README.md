@@ -1,41 +1,35 @@
-# zkw-core (Rust) — protocol v0.2
-CONFIDENTIAL. Not audited. Rust port of `../zkw-ref` (Python reference).
+# zkw-core: Zignal messaging protocol (Rust, v0.3)
 
-## First run on the Mac (Terminal app, not the Claude sandbox)
+Not audited. Rust implementation of the protocol defined by the Python reference in
+`../zkw-ref`. The test vectors pin every derived key, tag, signature and memo byte, so both
+implementations must agree exactly.
+
+## Build and test
+
 ```bash
-# 1. Install Rust (one time). Accept the defaults.
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 2. Build and test
-cd ~/Documents/Zignal/zkw-core
-cargo test 2>&1 | tee test-output.txt
+cargo test
 ```
-`test-output.txt` lands in this folder, so Claude can read it directly.
 
-This code was written without a compiler (the Claude sandbox can't download crates), so the
-first build may hit a few small compile errors. That's expected; Claude fixes them from
-`test-output.txt`.
-
-## What passing means
-- `tests/vectors.rs`: every derived key, tag, signature, and memo byte matches the Python reference exactly
-- `tests/protocol.rs`: the 20 end-to-end checks (handshake, ratchet, replay, tamper, forward secrecy, duress vault)
-
-## Layout
-| File | Python twin |
+| Test file | What it checks |
 |---|---|
-| `src/primitives.rs` | `zkw/primitives.py` |
-| `src/identity.rs` | `zkw/identity.py` |
-| `src/envelope.rs` | `zkw/envelope.py` |
-| `src/ratchet.rs` | `zkw/ratchet.py` |
-| `src/session.rs` | `zkw/session.py` |
-| `src/vault.rs` | `zkw/vault.py` |
+| `tests/vectors.rs` | Byte-for-byte agreement with `../zkw-ref/vectors/test_vectors.json` |
+| `tests/protocol.rs` | End to end: invite and cold-contact handshakes, ratchet, out-of-order delivery, replay, tampering, forward secrecy, duress vault |
+| `tests/persist.rs` | Encrypted save/restore across restarts (mid-conversation, skipped messages, cold contacts, replays), prekey rotation, profile key derivation |
 
-## Improvements over the Python reference
+## Modules
+
+| File | What it does | Python twin |
+|---|---|---|
+| `src/primitives.rs` | X25519, Ed25519, ML-KEM-768, ChaCha20-Poly1305, HKDF; all protocol labels | `zkw/primitives.py` |
+| `src/identity.rs` | Seed-derived identity, signed prekeys, safety number, invite codec | `zkw/identity.py` |
+| `src/envelope.rs` | Fixed 512-byte memo format, chunking, reassembly | `zkw/envelope.py` |
+| `src/ratchet.rs` | Double Ratchet with header encryption, transactional decrypt | `zkw/ratchet.py` |
+| `src/session.rs` | Hybrid PQXDH handshake, sessions, HELLO/BUNDLE flow, inbox, replay protection | `zkw/session.py` |
+| `src/vault.rs` | Duress PIN vault (Argon2id, two identical slots, optional silent wipe) | `zkw/vault.py` |
+| `src/persist.rs` | Sealed inbox state (ChaCha20-Poly1305), profile key derivation | — |
+
+## Beyond the Python reference
+
 - Message keys, chain keys, header keys and vault keys are zeroized after use and on drop.
-- Built as a static library (`staticlib`) ready to link into iOS.
-
-## Next (after tests pass)
-1. iOS targets: `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`
-2. UniFFI bindings so Swift can call `Inbox`, `Session`, `vault`
-3. Package as an XCFramework and add it to the Zodl iOS fork
+- Inbox state can be exported, sealed under a state key and restored after an app restart.
+- Used by `../zkw-ffi`, which builds the Swift bindings and the iOS XCFramework.
