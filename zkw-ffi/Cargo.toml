@@ -19,6 +19,9 @@ path = "uniffi-bindgen.rs"
 zkw-core = { path = "../zkw-core" }
 uniffi = { version = "0.28", features = ["cli"] }
 thiserror = "1"
+# Recovery phrase. Pinned: the phrase format must never change under us.
+bip39 = { version = "=2.2.2", features = ["zeroize"] }
+zeroize = "1"
 
 [profile.release]
 opt-level = 3

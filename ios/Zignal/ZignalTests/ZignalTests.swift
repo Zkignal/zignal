@@ -118,9 +118,54 @@ struct ProfileStoreTests {
         #expect(throws: ZignalError.self) { try otherDevice.load(keys) }
     }
 
+    @Test func oldProfileFilesStillDecode() throws {
+        let old = Data(#"{"version":1,"inbox":"AQ==","contacts":[],"messages":[]}"#.utf8)
+        let data = try JSONDecoder().decode(ProfileData.self, from: old)
+        #expect(data.inbox == Data([1]))
+        #expect(data.walletCreated == nil)
+        #expect(data.recoveryPhraseShown == nil)
+    }
+
     @Test func missingFileLoadsAsNil() throws {
         let store = try makeTempStore()
         #expect(try store.load(ProfileKeyset(secret: secureRandom(32))) == nil)
+    }
+}
+
+struct RecoveryPhraseTests {
+    @Test func phraseRestoresTheSameProfile() throws {
+        let secret = try secureRandom(32)
+        let phrase = try recoveryPhrase(profileSecret: secret)
+        #expect(phrase.split(separator: " ").count == 24)
+        let restored = try profileSecretFromPhrase(phrase: "  " + phrase.uppercased() + "\n")
+        #expect(restored == secret)
+        let original = try ProfileKeyset(secret: secret)
+        let again = try ProfileKeyset(secret: restored)
+        #expect(original.identitySeed == again.identitySeed)
+        #expect(original.stateKey == again.stateKey)
+        #expect(try walletSeed(profileSecret: secret).count == 64)
+        #expect(try walletSeed(profileSecret: restored) == walletSeed(profileSecret: secret))
+    }
+
+    @Test func invalidPhrasesAreRejected() {
+        #expect(throws: (any Error).self) { try profileSecretFromPhrase(phrase: "abandon abandon") }
+        #expect(throws: (any Error).self) {
+            try profileSecretFromPhrase(phrase: String(repeating: "zignal ", count: 24))
+        }
+    }
+
+    /// Runs Argon2id (64 MiB) twice.
+    @Test func vaultKeepsARestoredSecret() throws {
+        let secret = try secureRandom(32)
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471",
+                                          wipeRealOnDuress: false, restoredSecret: secret)
+        #expect(created.realSecret == secret)
+        #expect(created.decoySecret != secret)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "583914").secret == secret)
+        #expect(throws: ZignalError.self) {
+            try VaultOps.create(realPin: "583914", duressPin: "260471",
+                                wipeRealOnDuress: false, restoredSecret: Data(count: 16))
+        }
     }
 }
 
@@ -188,6 +233,24 @@ struct ProfileSessionTests {
         let other = try ProfileSession.open(keys: decoy, store: store)
         #expect(other.contacts.isEmpty)
         #expect(other.messages.isEmpty)
+    }
+
+    @Test func walletDateAndBackupFlagPersist() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let created = Date(timeIntervalSince1970: 1_700_000_000)
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys, walletCreated: created), keys)])
+
+        let session = try ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletCreated == created)
+        #expect(!session.recoveryPhraseShown)
+        #expect(session.belongs(to: keys))
+        #expect(!session.belongs(to: try ProfileKeyset(secret: secureRandom(32))))
+
+        session.markRecoveryPhraseShown()
+        let reopened = try ProfileSession.open(keys: keys, store: store)
+        #expect(reopened.recoveryPhraseShown)
+        #expect(reopened.walletCreated == created)
     }
 
     @Test func closedSessionNeverSavesAgain() async throws {

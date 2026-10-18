@@ -1,7 +1,8 @@
 //! Swift-facing API for zkw-core, generated with UniFFI.
 //!
 //! Swift sees: `ZkwInbox` (one per profile), `ZkwEvent`, `Outgoing`, `VaultUnlock`,
-//! and the free functions `vaultCreate`, `vaultUnlock`, `protocolVersion`.
+//! and the free functions `vaultCreate`, `vaultUnlock`, `protocolVersion`, `profileKeys`,
+//! `recoveryPhrase`, `profileSecretFromPhrase` and `walletSeed`.
 //! Byte fields (`Vec<u8>`) arrive in Swift as `Data`.
 //!
 //! The wallet layer (ZcashLightClientKit) is responsible for actually sending
@@ -9,6 +10,9 @@
 //! feeding every received 512-byte memo into `ZkwInbox.receive`.
 
 use std::sync::{Arc, Mutex, MutexGuard};
+
+use bip39::{Language, Mnemonic};
+use zeroize::Zeroizing;
 
 use zkw_core::session::{Event, Inbox, K_REACTION, K_RECEIPT, K_TEXT};
 use zkw_core::vault::{self, KdfParams};
@@ -344,9 +348,115 @@ impl ZkwInbox {
     }
 }
 
+// ---------------- recovery phrase (BIP-39) ----------------
+//
+// Each profile secret is 32 bytes of entropy, which is exactly one 24-word BIP-39 phrase.
+// The Zcash wallet uses the standard BIP-39 seed (PBKDF2, empty passphrase), so the same
+// phrase also restores the wallet in other Zcash wallets that use 24-word phrases.
+// Secrets and seeds are wiped from Rust memory once they have been handed back.
+
+const PROFILE_SECRET_LEN: usize = 32;
+
+fn mnemonic_for(profile_secret: &[u8]) -> Result<Mnemonic, ZkwError> {
+    let wrong_length = || ZkwError::InvalidInput("profile secret must be 32 bytes".into());
+    if profile_secret.len() != PROFILE_SECRET_LEN {
+        return Err(wrong_length());
+    }
+    Mnemonic::from_entropy_in(Language::English, profile_secret).map_err(|_| wrong_length())
+}
+
+/// The profile's 24-word recovery phrase: English BIP-39 words separated by single spaces.
+#[uniffi::export]
+pub fn recovery_phrase(profile_secret: Vec<u8>) -> Result<String, ZkwError> {
+    let secret = Zeroizing::new(profile_secret);
+    Ok(mnemonic_for(&secret)?.to_string())
+}
+
+/// The profile secret for a 24-word recovery phrase. Case, line breaks and extra spaces are
+/// ignored; unknown words, a bad checksum and any length other than 24 words are rejected.
+#[uniffi::export]
+pub fn profile_secret_from_phrase(phrase: String) -> Result<Vec<u8>, ZkwError> {
+    let phrase = Zeroizing::new(phrase);
+    let mut normalized = Zeroizing::new(String::with_capacity(phrase.len()));
+    for word in phrase.split_whitespace() {
+        if !normalized.is_empty() {
+            normalized.push(' ');
+        }
+        normalized.extend(word.chars().flat_map(char::to_lowercase));
+    }
+    let invalid = || ZkwError::InvalidInput("invalid recovery phrase".into());
+    let mnemonic = Mnemonic::parse_in_normalized(Language::English, &normalized).map_err(|_| invalid())?;
+    if mnemonic.word_count() != 24 {
+        return Err(invalid());
+    }
+    let (entropy, len) = mnemonic.to_entropy_array();
+    let entropy = Zeroizing::new(entropy);
+    Ok(entropy[..len].to_vec())
+}
+
+/// The 64-byte BIP-39 seed (empty passphrase) for the profile's Zcash wallet.
+#[uniffi::export]
+pub fn wallet_seed(profile_secret: Vec<u8>) -> Result<Vec<u8>, ZkwError> {
+    let secret = Zeroizing::new(profile_secret);
+    let seed = Zeroizing::new(mnemonic_for(&secret)?.to_seed_normalized(""));
+    Ok(seed.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hex(bytes: impl AsRef<[u8]>) -> String {
+        bytes.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn recovery_phrase_matches_bip39_reference_vector() {
+        let zero = vec![0u8; 32];
+        let phrase = recovery_phrase(zero.clone()).unwrap();
+        assert_eq!(phrase, format!("{} art", vec!["abandon"; 23].join(" ")));
+        // BIP-39 reference vector (passphrase "TREZOR") checks the seed derivation itself.
+        let m = Mnemonic::parse_in_normalized(Language::English, &phrase).unwrap();
+        assert_eq!(
+            hex(m.to_seed_normalized("TREZOR")),
+            "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8"
+        );
+        // Zignal's wallet seed: same phrase, empty passphrase (cross-checked with Python's PBKDF2).
+        assert_eq!(
+            hex(wallet_seed(zero).unwrap()),
+            "408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840"
+        );
+    }
+
+    #[test]
+    fn recovery_phrase_round_trip_and_normalization() {
+        let secret: Vec<u8> = (0..32u8).map(|i| i.wrapping_mul(37).wrapping_add(11)).collect();
+        let phrase = recovery_phrase(secret.clone()).unwrap();
+        assert_eq!(phrase.split(' ').count(), 24);
+        assert_eq!(profile_secret_from_phrase(phrase.clone()).unwrap(), secret);
+        let messy = format!("  {}\n", phrase.to_uppercase().replace(' ', "   \n "));
+        assert_eq!(profile_secret_from_phrase(messy).unwrap(), secret);
+        assert_eq!(wallet_seed(secret.clone()).unwrap().len(), 64);
+        assert_ne!(wallet_seed(secret).unwrap(), wallet_seed(vec![0u8; 32]).unwrap());
+    }
+
+    #[test]
+    fn invalid_recovery_phrases_are_rejected() {
+        let phrase = recovery_phrase(vec![7u8; 32]).unwrap();
+        let words: Vec<&str> = phrase.split(' ').collect();
+        assert!(profile_secret_from_phrase(words[..23].join(" ")).is_err(), "23 words");
+        let mut unknown = words.clone();
+        unknown[5] = "zignal";
+        assert!(profile_secret_from_phrase(unknown.join(" ")).is_err(), "unknown word");
+        let mut bad_checksum = words.clone();
+        bad_checksum[23] = if words[23] == "abandon" { "ability" } else { "abandon" };
+        assert!(profile_secret_from_phrase(bad_checksum.join(" ")).is_err(), "bad checksum");
+        let twelve = format!("{} about", vec!["abandon"; 11].join(" "));
+        assert!(Mnemonic::parse_in_normalized(Language::English, &twelve).is_ok());
+        assert!(profile_secret_from_phrase(twelve).is_err(), "valid 12-word phrase is not a profile");
+        assert!(recovery_phrase(vec![0u8; 16]).is_err());
+        assert!(wallet_seed(vec![0u8; 31]).is_err());
+    }
 
     const NOW: u64 = 1_790_000_000;
 

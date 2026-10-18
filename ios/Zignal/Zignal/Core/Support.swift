@@ -8,6 +8,7 @@ enum ZignalError: LocalizedError {
     case keychain(OSStatus)
     case damagedProfile
     case messageTooLong
+    case invalidRecoveryPhrase
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,7 @@ enum ZignalError: LocalizedError {
         case .keychain: "The Keychain is unavailable. Unlock your phone and try again."
         case .damagedProfile: "Saved data could not be decrypted. It may be damaged."
         case .messageTooLong: "This message is too long. Split it into shorter messages."
+        case .invalidRecoveryPhrase: "That isn't a valid 24-word recovery phrase. Check each word."
         }
     }
 }

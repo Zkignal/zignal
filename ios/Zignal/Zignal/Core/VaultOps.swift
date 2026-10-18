@@ -16,10 +16,13 @@ enum VaultOps {
         let vault: Data
     }
 
-    /// Creates two independent profiles. Each secret is 32 bytes of fresh entropy, the same
-    /// size as a 24-word recovery phrase, so the wallet can be built on it later unchanged.
-    static func create(realPin: String, duressPin: String, wipeRealOnDuress: Bool) throws -> Created {
-        let real = try secureRandom(32)
+    /// Creates two independent profiles. Each secret is 32 bytes of entropy, which is exactly
+    /// one 24-word recovery phrase. `restoredSecret` (from a recovery phrase) becomes the real
+    /// profile; otherwise both secrets are fresh. The decoy is always fresh.
+    static func create(realPin: String, duressPin: String, wipeRealOnDuress: Bool,
+                       restoredSecret: Data? = nil) throws -> Created {
+        if let restoredSecret, restoredSecret.count != 32 { throw ZignalError.invalidRecoveryPhrase }
+        let real = try restoredSecret ?? secureRandom(32)
         let decoy = try secureRandom(32)
         let vault = try vaultCreate(realPin: realPin, realSecret: real, duressPin: duressPin,
                                     decoySecret: decoy, wipeRealOnDuress: wipeRealOnDuress)

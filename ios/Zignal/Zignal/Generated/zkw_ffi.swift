@@ -1490,9 +1490,30 @@ public func profileKeys(profileSecret: Data)throws  -> ProfileKeys {
     )
 })
 }
+/**
+ * The profile secret for a 24-word recovery phrase. Case, line breaks and extra spaces are
+ * ignored; unknown words, a bad checksum and any length other than 24 words are rejected.
+ */
+public func profileSecretFromPhrase(phrase: String)throws  -> Data {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeZkwError.lift) {
+    uniffi_zkw_ffi_fn_func_profile_secret_from_phrase(
+        FfiConverterString.lower(phrase),$0
+    )
+})
+}
 public func protocolVersion() -> String {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_zkw_ffi_fn_func_protocol_version($0
+    )
+})
+}
+/**
+ * The profile's 24-word recovery phrase: English BIP-39 words separated by single spaces.
+ */
+public func recoveryPhrase(profileSecret: Data)throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeZkwError.lift) {
+    uniffi_zkw_ffi_fn_func_recovery_phrase(
+        FfiConverterData.lower(profileSecret),$0
     )
 })
 }
@@ -1521,6 +1542,16 @@ public func vaultUnlock(vault: Data, pin: String)throws  -> VaultUnlock {
     )
 })
 }
+/**
+ * The 64-byte BIP-39 seed (empty passphrase) for the profile's Zcash wallet.
+ */
+public func walletSeed(profileSecret: Data)throws  -> Data {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeZkwError.lift) {
+    uniffi_zkw_ffi_fn_func_wallet_seed(
+        FfiConverterData.lower(profileSecret),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -1540,13 +1571,22 @@ private var initializationResult: InitializationResult = {
     if (uniffi_zkw_ffi_checksum_func_profile_keys() != 27102) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_zkw_ffi_checksum_func_profile_secret_from_phrase() != 47107) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_zkw_ffi_checksum_func_protocol_version() != 58707) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_zkw_ffi_checksum_func_recovery_phrase() != 24652) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zkw_ffi_checksum_func_vault_create() != 40390) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zkw_ffi_checksum_func_vault_unlock() != 62896) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_zkw_ffi_checksum_func_wallet_seed() != 19861) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zkw_ffi_checksum_method_zkwinbox_accept_request() != 4070) {

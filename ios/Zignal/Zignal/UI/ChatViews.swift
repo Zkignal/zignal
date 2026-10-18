@@ -2,16 +2,27 @@ import SwiftUI
 
 struct ChatListView: View {
     @Environment(AppModel.self) private var model
-    let session: ProfileSession
+    private let session: ProfileSession
+    @State private var showPhrase = false
+
+    init(session: ProfileSession) {
+        self.session = session
+    }
 
     var body: some View {
         NavigationStack {
-            List(session.contactsByRecent) { contact in
-                NavigationLink(value: contact.id) {
-                    ChatRow(contact: contact, last: session.lastMessage(with: contact.id))
+            List {
+                if !session.recoveryPhraseShown {
+                    Section {
+                        Button {
+                            showPhrase = true
+                        } label: {
+                            Label("Back up your recovery phrase", systemImage: "key")
+                        }
+                    } footer: {
+                        Text("Without it, a lost phone means a lost wallet.")
+                    }
                 }
-            }
-            .overlay {
                 if session.contacts.isEmpty {
                     ContentUnavailableView {
                         Label("No conversations", systemImage: "bubble.left.and.bubble.right")
@@ -20,6 +31,13 @@ struct ChatListView: View {
                     } actions: {
                         Button("Start demo chat") { Task { await session.startDemoChat() } }
                             .buttonStyle(.borderedProminent)
+                    }
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(session.contactsByRecent) { contact in
+                        NavigationLink(value: contact.id) {
+                            ChatRow(contact: contact, last: session.lastMessage(with: contact.id))
+                        }
                     }
                 }
             }
@@ -32,6 +50,9 @@ struct ChatListView: View {
                     Button("Lock", systemImage: "lock") { model.lock() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button("Recovery phrase", systemImage: "key") { showPhrase = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("Start demo chat", systemImage: "sparkles") {
                             Task { await session.startDemoChat() }
@@ -41,6 +62,10 @@ struct ChatListView: View {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
                 }
+            }
+            .sheet(isPresented: $showPhrase) {
+                RecoveryPhraseView(session: session)
+                    .environment(model)
             }
         }
         // One alert for the whole stack, so a pushed screen never shows a second copy.

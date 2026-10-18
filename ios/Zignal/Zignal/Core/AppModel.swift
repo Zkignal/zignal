@@ -52,15 +52,20 @@ final class AppModel {
 
     // MARK: - Setup
 
-    func createProfiles(realPin: String, duressPin: String, wipeRealOnDuress: Bool) async {
+    /// Creates the real and decoy profiles. With `restore`, the real profile comes from a
+    /// recovery phrase; chat history is never part of a phrase, so it starts empty.
+    func createProfiles(realPin: String, duressPin: String, wipeRealOnDuress: Bool,
+                        restore: RestoredProfile? = nil) async {
         guard !busy else { return }
         busy = true
         errorText = nil
         defer { busy = false }
         do {
+            let restoredSecret = restore?.secret
             let created = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.create(realPin: realPin, duressPin: duressPin,
-                                    wipeRealOnDuress: wipeRealOnDuress)
+                                    wipeRealOnDuress: wipeRealOnDuress,
+                                    restoredSecret: restoredSecret)
             }.value
             let realKeys = try ProfileKeyset(secret: created.realSecret)
             let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
@@ -69,7 +74,7 @@ final class AppModel {
             try Keychain.delete(.fileKey)
             try store.prepare()
             try store.reset(with: [
-                (ProfileSession.emptyData(keys: realKeys), realKeys),
+                (ProfileSession.emptyData(keys: realKeys, walletCreated: restore?.created ?? Date()), realKeys),
                 (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
             ])
             // The vault is stored last: if anything above fails, setup simply runs again.
@@ -117,6 +122,37 @@ final class AppModel {
             if !inBackground { phase = .unlocked(session) }
         } catch {
             errorText = Self.describe(error)
+        }
+    }
+
+    // MARK: - Recovery phrase
+
+    enum PhraseReveal {
+        case phrase(String)
+        case wrongPin
+        case refused(String)
+    }
+
+    /// Shows the open profile's recovery phrase after checking its PIN again. Attempts count
+    /// toward the same wrong-PIN limit as unlocking. A PIN for the other profile is treated as
+    /// wrong, and the vault returned by the check is never saved, so entering the duress PIN
+    /// here can't trigger the silent wipe.
+    func revealRecoveryPhrase(pin: String, for session: ProfileSession) async -> PhraseReveal {
+        do {
+            let wait = AttemptLimiter.waitTime(try AttemptLimiter.load())
+            guard wait <= 0 else { return .refused("Too many wrong PINs. Try again in \(Self.format(wait)).") }
+            guard let vault = try Keychain.read(.vault) else { return .wrongPin }
+            try AttemptLimiter.recordAttempt()
+            let result = try await Task.detached(priority: .userInitiated) {
+                try VaultOps.unlock(vault: vault, pin: pin)
+            }.value
+            guard let secret = result.secret, session.belongs(to: try ProfileKeyset(secret: secret)) else {
+                return .wrongPin
+            }
+            AttemptLimiter.reset()
+            return .phrase(try recoveryPhrase(profileSecret: secret))
+        } catch {
+            return .refused(Self.describe(error))
         }
     }
 

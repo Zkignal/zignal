@@ -28,6 +28,9 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                NavigationLink("Restore from recovery phrase") {
+                    RestorePhraseView()
+                }
                 Text("Experimental and not audited. Core \(protocolVersion()).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -52,6 +55,8 @@ private struct Feature: View {
 
 struct PinSetupView: View {
     @Environment(AppModel.self) private var model
+    /// Set when the real profile comes from a recovery phrase.
+    var restore: RestoredProfile?
     @State private var realPin = ""
     @State private var realRepeat = ""
     @State private var duressPin = ""
@@ -60,13 +65,20 @@ struct PinSetupView: View {
 
     var body: some View {
         Form {
+            if restore != nil {
+                Section {
+                    Label("Recovery phrase accepted", systemImage: "checkmark.seal")
+                } footer: {
+                    Text("It becomes your real profile. Chat history isn't part of a phrase, so chats start empty. The decoy profile gets a new phrase of its own.")
+                }
+            }
             Section {
                 SecureField("Unlock PIN", text: $realPin).pinInput($realPin)
                 SecureField("Repeat unlock PIN", text: $realRepeat).pinInput($realRepeat)
             } header: {
                 Text("Unlock PIN")
             } footer: {
-                hint(realProblem, otherwise: "At least \(PinPolicy.minLength) digits. It can't be recovered if you forget it.")
+                hint(realProblem, otherwise: "At least \(PinPolicy.minLength) digits. If you forget it, restore from your recovery phrase; chat history can't be restored.")
             }
 
             Section {
@@ -88,11 +100,11 @@ struct PinSetupView: View {
                 Button {
                     Task {
                         await model.createProfiles(realPin: realPin, duressPin: duressPin,
-                                                   wipeRealOnDuress: wipeOnDuress)
+                                                   wipeRealOnDuress: wipeOnDuress, restore: restore)
                     }
                 } label: {
                     HStack {
-                        Text("Create profiles")
+                        Text(restore == nil ? "Create profiles" : "Restore profile")
                         if model.busy {
                             Spacer()
                             ProgressView()
@@ -139,6 +151,70 @@ struct PinSetupView: View {
             Text(problem).foregroundStyle(.red)
         } else {
             Text(text)
+        }
+    }
+}
+
+/// Restore: enter a 24-word recovery phrase and roughly when the wallet was created.
+struct RestorePhraseView: View {
+    @State private var phrase = ""
+    @State private var created = Date()
+    @State private var restored: RestoredProfile?
+    @State private var errorText: String?
+
+    /// Sapling activation (2018-10-29). No Zcash shielded wallet can be older.
+    private static let earliest = Calendar(identifier: .gregorian)
+        .date(from: DateComponents(year: 2018, month: 10, day: 29)) ?? .distantPast
+
+    private var wordCount: Int {
+        phrase.split(whereSeparator: \.isWhitespace).count
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("24 words, separated by spaces", text: $phrase, axis: .vertical)
+                    .lineLimit(4...8)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .privacySensitive()
+            } header: {
+                Text("Recovery phrase")
+            } footer: {
+                Text("\(wordCount) of 24 words")
+            }
+            Section {
+                DatePicker("Created", selection: $created, in: Self.earliest...Date(),
+                           displayedComponents: .date)
+            } header: {
+                Text("When was this wallet created?")
+            } footer: {
+                Text("Pick a date on or before you first used this phrase. Earlier is safe but makes the first sync slower.")
+            }
+            Section {
+                Button("Continue", action: check)
+                    .disabled(wordCount != 24)
+            } footer: {
+                if let errorText {
+                    Text(errorText).foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Restore")
+        .scrollDismissesKeyboard(.interactively)
+        .navigationDestination(item: $restored) { restore in
+            PinSetupView(restore: restore)
+        }
+    }
+
+    private func check() {
+        do {
+            let secret = try profileSecretFromPhrase(phrase: phrase)
+            errorText = nil
+            restored = RestoredProfile(secret: secret, created: created)
+        } catch {
+            errorText = ZignalError.invalidRecoveryPhrase.errorDescription
         }
     }
 }

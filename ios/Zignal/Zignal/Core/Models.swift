@@ -9,6 +9,17 @@ struct ProfileData: Codable, Equatable {
     var messages: [ChatMessage] = []
     /// Sealed state of the on-device demo contact, if one was started.
     var demoContact: Data?
+    /// When this profile's wallet was created, or for a restored profile the date the user
+    /// picked. The wallet starts scanning the chain from about this point.
+    var walletCreated: Date?
+    /// Whether the user has opened the recovery phrase screen for this profile.
+    var recoveryPhraseShown: Bool?
+}
+
+/// A profile being restored from its recovery phrase, waiting for PINs to be set.
+struct RestoredProfile: Hashable, Sendable {
+    let secret: Data
+    let created: Date
 }
 
 struct Contact: Codable, Identifiable, Hashable {

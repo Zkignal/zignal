@@ -14,6 +14,9 @@ final class ProfileSession {
 
     private(set) var contacts: [Contact]
     private(set) var messages: [ChatMessage]
+    /// When this profile's wallet was created (or the date picked when restoring it).
+    private(set) var walletCreated: Date?
+    private(set) var recoveryPhraseShown: Bool
     var errorText: String?
 
     /// Simulated network delay for the demo contact. Tests set this to zero.
@@ -31,14 +34,17 @@ final class ProfileSession {
         self.inbox = inbox
         contacts = data.contacts
         messages = data.messages
+        walletCreated = data.walletCreated
+        recoveryPhraseShown = data.recoveryPhraseShown ?? false
     }
 
     // MARK: - Lifecycle
 
     /// Contents of a brand-new, empty profile. Used at setup for both profiles.
-    static func emptyData(keys: ProfileKeyset) throws -> ProfileData {
+    static func emptyData(keys: ProfileKeyset, walletCreated: Date = Date()) throws -> ProfileData {
         let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
-        return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey))
+        return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
+                           walletCreated: walletCreated)
     }
 
     static func open(keys: ProfileKeyset, store: ProfileStore) throws -> ProfileSession {
@@ -94,7 +100,19 @@ final class ProfileSession {
         try? inbox.safetyNumber(peer: peer)
     }
 
+    /// True when `other` are this profile's keys. Used to check a PIN before showing the
+    /// recovery phrase, without saying which profile a different PIN belongs to.
+    func belongs(to other: ProfileKeyset) -> Bool {
+        other.stateKey == keys.stateKey
+    }
+
     // MARK: - Editing
+
+    func markRecoveryPhraseShown() {
+        guard !recoveryPhraseShown else { return }
+        recoveryPhraseShown = true
+        persist()
+    }
 
     func rename(_ peer: Data, to name: String) {
         let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
@@ -239,7 +257,9 @@ final class ProfileSession {
     private func save() throws {
         guard !isClosed else { throw CancellationError() }
         var data = ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
-                               contacts: contacts, messages: messages)
+                               contacts: contacts, messages: messages,
+                               walletCreated: walletCreated,
+                               recoveryPhraseShown: recoveryPhraseShown)
         if let demo {
             data.demoContact = try demo.exportSealed(stateKey: keys.subkeyBytes(KeyLabel.demoState))
         }
