@@ -28,43 +28,33 @@ final class ProfileSession {
     @ObservationIgnored private var demo: ZkwInbox?
     @ObservationIgnored private var isClosed = false
 
-    private init(keys: ProfileKeyset, store: ProfileStore, inbox: ZkwInbox, data: ProfileData) {
-        self.keys = keys
-        self.store = store
-        self.inbox = inbox
-        contacts = data.contacts
-        messages = data.messages
-        walletCreated = data.walletCreated
-        recoveryPhraseShown = data.recoveryPhraseShown ?? false
+    private init(_ loaded: LoadedProfile) {
+        keys = loaded.keys
+        store = loaded.store
+        inbox = loaded.inbox
+        demo = loaded.demo
+        contacts = loaded.data.contacts
+        messages = loaded.data.messages
+        walletCreated = loaded.data.walletCreated
+        recoveryPhraseShown = loaded.data.recoveryPhraseShown ?? false
     }
 
     // MARK: - Lifecycle
 
     /// Contents of a brand-new, empty profile. Used at setup for both profiles.
-    static func emptyData(keys: ProfileKeyset, walletCreated: Date = Date()) throws -> ProfileData {
+    nonisolated static func emptyData(keys: ProfileKeyset, walletCreated: Date = Date()) throws -> ProfileData {
         let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
         return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
                            walletCreated: walletCreated)
     }
 
-    static func open(keys: ProfileKeyset, store: ProfileStore) throws -> ProfileSession {
-        let now = unixNow()
-        let session: ProfileSession
-        if let saved = try store.load(keys) {
-            let inbox = try ZkwInbox.restore(identitySeed: keys.identitySeed,
-                                             stateKey: keys.stateKey, sealedState: saved.inbox)
-            session = ProfileSession(keys: keys, store: store, inbox: inbox, data: saved)
-            session.restoreDemo(from: saved.demoContact)
-        } else {
-            // No file for this profile on this device (for example after restoring a device
-            // backup, which never contains chat state). Start with an empty inbox.
-            let inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
-            session = ProfileSession(keys: keys, store: store, inbox: inbox,
-                                     data: ProfileData(inbox: Data()))
-        }
-        _ = try session.inbox.rotatePrekeysIfDue(now: now)
-        try session.save()
-        return session
+    /// Opens a profile. Decrypting it, restoring its inbox and re-sealing every profile file
+    /// all run off the main thread, so the screen never freezes while a profile opens.
+    static func open(keys: ProfileKeyset, store: ProfileStore) async throws -> ProfileSession {
+        let loaded = try await Task.detached(priority: .userInitiated) {
+            try LoadedProfile.load(keys: keys, store: store)
+        }.value
+        return ProfileSession(loaded)
     }
 
     // MARK: - Reading
@@ -181,23 +171,6 @@ final class ProfileSession {
         }
     }
 
-    /// Restores the demo contact. If its state is missing, damaged, or it never received our
-    /// first message (say the app was killed right after saving), the demo contact is removed
-    /// so it can be started again. It never blocks opening the profile.
-    private func restoreDemo(from state: Data?) {
-        if let state,
-           let bot = try? ZkwInbox.restore(identitySeed: keys.subkeyBytes(KeyLabel.demoIdentity),
-                                           stateKey: keys.subkeyBytes(KeyLabel.demoState),
-                                           sealedState: state),
-           (try? bot.contacts())?.isEmpty == false {
-            demo = bot
-            return
-        }
-        let demoIds = Set(contacts.filter(\.isDemo).map(\.id))
-        contacts.removeAll { demoIds.contains($0.id) }
-        messages.removeAll { demoIds.contains($0.peer) }
-    }
-
     /// The demo contact decrypts our memos and replies with what it read.
     private func deliverToDemo(_ memos: [Data]) async {
         if demoReplyDelay > .zero { try? await Task.sleep(for: demoReplyDelay) }
@@ -256,13 +229,10 @@ final class ProfileSession {
 
     private func save() throws {
         guard !isClosed else { throw CancellationError() }
-        var data = ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
-                               contacts: contacts, messages: messages,
+        var data = ProfileData(inbox: Data(), contacts: contacts, messages: messages,
                                walletCreated: walletCreated,
                                recoveryPhraseShown: recoveryPhraseShown)
-        if let demo {
-            data.demoContact = try demo.exportSealed(stateKey: keys.subkeyBytes(KeyLabel.demoState))
-        }
+        try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }
 
@@ -272,5 +242,67 @@ final class ProfileSession {
 
     private func report(_ error: Error) {
         errorText = AppModel.describe(error)
+    }
+}
+
+/// A profile read from disk and ready to show, prepared off the main thread by
+/// `ProfileSession.open`.
+///
+/// The generated bindings don't mark `ZkwInbox` as Sendable, but zkw-ffi guards every call
+/// into an inbox with a mutex, so handing one from a background task to the main actor is safe.
+private struct LoadedProfile: @unchecked Sendable {
+    let keys: ProfileKeyset
+    let store: ProfileStore
+    let inbox: ZkwInbox
+    let demo: ZkwInbox?
+    let data: ProfileData
+
+    static func load(keys: ProfileKeyset, store: ProfileStore) throws -> LoadedProfile {
+        let now = unixNow()
+        var data: ProfileData
+        let inbox: ZkwInbox
+        let demo: ZkwInbox?
+        if let saved = try store.load(keys) {
+            data = saved
+            inbox = try ZkwInbox.restore(identitySeed: keys.identitySeed,
+                                         stateKey: keys.stateKey, sealedState: saved.inbox)
+            demo = restoreDemo(keys: keys, data: &data)
+        } else {
+            // No file for this profile on this device (for example after restoring a device
+            // backup, which never contains chat state). Start with an empty inbox.
+            data = ProfileData(inbox: Data())
+            inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
+            demo = nil
+        }
+        _ = try inbox.rotatePrekeysIfDue(now: now)
+        // Saving on every open re-seals all profile files, whichever profile was opened.
+        try data.seal(inbox: inbox, demo: demo, keys: keys)
+        try store.save(data, keys)
+        return LoadedProfile(keys: keys, store: store, inbox: inbox, demo: demo, data: data)
+    }
+
+    /// Restores the demo contact. If its state is missing, damaged, or it never received our
+    /// first message (say the app was killed right after saving), the demo contact is removed
+    /// so it can be started again. It never blocks opening the profile.
+    private static func restoreDemo(keys: ProfileKeyset, data: inout ProfileData) -> ZkwInbox? {
+        if let state = data.demoContact,
+           let bot = try? ZkwInbox.restore(identitySeed: keys.subkeyBytes(KeyLabel.demoIdentity),
+                                           stateKey: keys.subkeyBytes(KeyLabel.demoState),
+                                           sealedState: state),
+           (try? bot.contacts())?.isEmpty == false {
+            return bot
+        }
+        let demoIds = Set(data.contacts.filter(\.isDemo).map(\.id))
+        data.contacts.removeAll { demoIds.contains($0.id) }
+        data.messages.removeAll { demoIds.contains($0.peer) }
+        return nil
+    }
+}
+
+private extension ProfileData {
+    /// Seals the live inbox (and demo contact, if any) into this record before it's written.
+    mutating func seal(inbox: ZkwInbox, demo: ZkwInbox?, keys: ProfileKeyset) throws {
+        self.inbox = try inbox.exportSealed(stateKey: keys.stateKey)
+        demoContact = try demo?.exportSealed(stateKey: keys.subkeyBytes(KeyLabel.demoState))
     }
 }

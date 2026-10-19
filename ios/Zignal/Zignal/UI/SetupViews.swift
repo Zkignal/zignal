@@ -239,25 +239,32 @@ struct UnlockView: View {
                 .padding(12)
                 .background(.quaternary, in: .rect(cornerRadius: 12))
                 .frame(maxWidth: 260)
-            Button(action: submit) {
-                ZStack {
-                    Text("Unlock").opacity(model.busy ? 0 : 1)
-                    if model.busy { ProgressView() }
+            // Redrawn every second so the wrong-PIN countdown is live.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let wait = model.remainingWait(at: context.date)
+                VStack(spacing: 20) {
+                    Button(action: submit) {
+                        ZStack {
+                            Text("Unlock").opacity(model.busy ? 0 : 1)
+                            if model.busy { ProgressView() }
+                        }
+                        .frame(maxWidth: 200)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(pin.count < PinPolicy.minLength || model.busy || wait > 0)
+                    PinStatus(wait: wait, checking: model.busy, error: model.errorText)
                 }
-                .frame(maxWidth: 200)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(pin.count < PinPolicy.minLength || model.busy)
-            Text(model.errorText ?? " ")
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .multilineTextAlignment(.center)
             Spacer()
             Spacer()
         }
         .padding()
-        .onAppear { focused = true }
+        .onAppear {
+            model.refreshLockout()
+            focused = true
+        }
+        .resetsPinEntry($pin, focused: $focused)
     }
 
     private func submit() {

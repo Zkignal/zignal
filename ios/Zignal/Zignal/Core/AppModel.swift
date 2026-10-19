@@ -17,6 +17,8 @@ final class AppModel {
 
     private(set) var phase: Phase = .starting
     private(set) var busy = false
+    /// Set after too many wrong PINs: no PIN is checked before this time.
+    private(set) var lockedUntil: Date?
     var errorText: String?
 
     @ObservationIgnored private let store: ProfileStore
@@ -62,27 +64,32 @@ final class AppModel {
         defer { busy = false }
         do {
             let restoredSecret = restore?.secret
-            let created = try await Task.detached(priority: .userInitiated) {
-                try VaultOps.create(realPin: realPin, duressPin: duressPin,
-                                    wipeRealOnDuress: wipeRealOnDuress,
-                                    restoredSecret: restoredSecret)
+            let walletCreated = restore?.created ?? Date()
+            let store = self.store
+            // Argon2id (once per PIN) and writing both profiles run off the main thread.
+            let realKeys = try await Task.detached(priority: .userInitiated) {
+                let created = try VaultOps.create(realPin: realPin, duressPin: duressPin,
+                                                  wipeRealOnDuress: wipeRealOnDuress,
+                                                  restoredSecret: restoredSecret)
+                let realKeys = try ProfileKeyset(secret: created.realSecret)
+                let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
+                // Fresh device key, and both profiles written together so they look alike
+                // from day one. Anything left from an earlier, unfinished setup is removed.
+                try Keychain.delete(.fileKey)
+                try store.prepare()
+                try store.reset(with: [
+                    (ProfileSession.emptyData(keys: realKeys, walletCreated: walletCreated), realKeys),
+                    (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
+                ])
+                // The vault is stored last: if anything above fails, setup simply runs again.
+                try Keychain.write(created.vault, to: .vault)
+                return realKeys
             }.value
-            let realKeys = try ProfileKeyset(secret: created.realSecret)
-            let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
-            // Fresh device key, and both profiles written together so they look alike from
-            // day one. Anything left from an earlier, unfinished setup is removed.
-            try Keychain.delete(.fileKey)
-            try store.prepare()
-            try store.reset(with: [
-                (ProfileSession.emptyData(keys: realKeys, walletCreated: restore?.created ?? Date()), realKeys),
-                (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
-            ])
-            // The vault is stored last: if anything above fails, setup simply runs again.
-            try Keychain.write(created.vault, to: .vault)
             UserDefaults.standard.set(true, forKey: Self.installedKey)
             AttemptLimiter.reset()
-            let session = try ProfileSession.open(keys: realKeys, store: store)
-            phase = inBackground ? .locked : .unlocked(session)
+            lockedUntil = nil
+            let session = try await ProfileSession.open(keys: realKeys, store: store)
+            show(session)
         } catch {
             errorText = Self.describe(error)
         }
@@ -96,11 +103,8 @@ final class AppModel {
         busy = true
         defer { busy = false }
         do {
-            let wait = AttemptLimiter.waitTime(try AttemptLimiter.load())
-            guard wait <= 0 else {
-                errorText = "Too many wrong PINs. Try again in \(Self.format(wait))."
-                return
-            }
+            // The unlock screen shows a countdown while this is set.
+            guard try updateLockout() == nil else { return }
             guard let vault = try Keychain.read(.vault) else {
                 phase = .setup
                 return
@@ -115,13 +119,46 @@ final class AppModel {
             }
             guard let secret = result.secret else {
                 errorText = "Wrong PIN."
+                try updateLockout()
                 return
             }
             AttemptLimiter.reset()
-            let session = try ProfileSession.open(keys: ProfileKeyset(secret: secret), store: store)
-            if !inBackground { phase = .unlocked(session) }
+            lockedUntil = nil
+            let keys = try ProfileKeyset(secret: secret)
+            show(try await ProfileSession.open(keys: keys, store: store))
         } catch {
             errorText = Self.describe(error)
+        }
+    }
+
+    /// Shows any wrong-PIN wait as soon as a PIN screen appears, before anything is typed.
+    /// If the counter can't be read here, the PIN check reads it again and fails closed.
+    func refreshLockout() {
+        _ = try? updateLockout()
+    }
+
+    /// Seconds left before the next PIN can be checked; 0 when there's no wait.
+    func remainingWait(at date: Date = Date()) -> TimeInterval {
+        guard let lockedUntil else { return 0 }
+        return max(0, lockedUntil.timeIntervalSince(date))
+    }
+
+    /// Reads the wrong-PIN counter and sets `lockedUntil`. Throws if the Keychain can't be
+    /// read, so a PIN check fails closed.
+    @discardableResult
+    private func updateLockout() throws -> Date? {
+        let wait = AttemptLimiter.waitTime(try AttemptLimiter.load())
+        lockedUntil = wait > 0 ? Date().addingTimeInterval(wait) : nil
+        return lockedUntil
+    }
+
+    /// Shows an opened profile, unless the app went to the background while it was opening.
+    private func show(_ session: ProfileSession) {
+        if inBackground {
+            session.close()
+            phase = .locked
+        } else {
+            phase = .unlocked(session)
         }
     }
 
@@ -130,6 +167,8 @@ final class AppModel {
     enum PhraseReveal {
         case phrase(String)
         case wrongPin
+        /// Too many wrong PINs; the screen shows the countdown from `lockedUntil`.
+        case waiting
         case refused(String)
     }
 
@@ -139,17 +178,18 @@ final class AppModel {
     /// here can't trigger the silent wipe.
     func revealRecoveryPhrase(pin: String, for session: ProfileSession) async -> PhraseReveal {
         do {
-            let wait = AttemptLimiter.waitTime(try AttemptLimiter.load())
-            guard wait <= 0 else { return .refused("Too many wrong PINs. Try again in \(Self.format(wait)).") }
+            guard try updateLockout() == nil else { return .waiting }
             guard let vault = try Keychain.read(.vault) else { return .wrongPin }
             try AttemptLimiter.recordAttempt()
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
             guard let secret = result.secret, session.belongs(to: try ProfileKeyset(secret: secret)) else {
+                try updateLockout()
                 return .wrongPin
             }
             AttemptLimiter.reset()
+            lockedUntil = nil
             return .phrase(try recoveryPhrase(profileSecret: secret))
         } catch {
             return .refused(Self.describe(error))
@@ -179,8 +219,9 @@ final class AppModel {
         #endif
     }
 
-    private static func format(_ seconds: TimeInterval) -> String {
+    /// "Too many wrong PINs. Try again in 0:27." for a live countdown.
+    nonisolated static func waitMessage(_ seconds: TimeInterval) -> String {
         let s = Int(seconds.rounded(.up))
-        return s < 60 ? "\(s) seconds" : "\((s + 59) / 60) minutes"
+        return "Too many wrong PINs. Try again in \(s / 60):\(String(format: "%02d", s % 60))."
     }
 }

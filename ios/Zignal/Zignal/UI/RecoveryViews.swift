@@ -42,29 +42,40 @@ struct RecoveryPhraseView: View {
                 SecureField("PIN", text: $pin)
                     .pinInput($pin)
                     .focused($focused)
-                Button {
-                    Task { await check() }
-                } label: {
-                    HStack {
-                        Text("Show recovery phrase")
-                        if checking {
-                            Spacer()
-                            ProgressView()
+                // Redrawn every second so the wrong-PIN countdown is live.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Button {
+                        Task { await check() }
+                    } label: {
+                        HStack {
+                            Text("Show recovery phrase")
+                            if checking {
+                                Spacer()
+                                ProgressView()
+                            }
                         }
                     }
+                    .disabled(pin.count < PinPolicy.minLength || checking
+                              || model.remainingWait(at: context.date) > 0)
                 }
-                .disabled(pin.count < PinPolicy.minLength || checking)
             } header: {
                 Text("Enter your PIN")
             } footer: {
-                if let errorText {
-                    Text(errorText).foregroundStyle(.red)
-                } else {
-                    Text("Make sure nobody can see your screen.")
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let wait = model.remainingWait(at: context.date)
+                    if wait > 0 || checking || errorText != nil {
+                        PinStatus(wait: wait, checking: checking, error: errorText)
+                    } else {
+                        Text("Make sure nobody can see your screen.")
+                    }
                 }
             }
         }
-        .onAppear { focused = true }
+        .onAppear {
+            model.refreshLockout()
+            focused = true
+        }
+        .resetsPinEntry($pin, focused: $focused)
     }
 
     private var phrase: some View {
@@ -87,6 +98,7 @@ struct RecoveryPhraseView: View {
     }
 
     private func check() async {
+        guard !checking else { return } // a double tap must not count two attempts
         checking = true
         defer { checking = false }
         let entered = pin
@@ -98,6 +110,8 @@ struct RecoveryPhraseView: View {
             session.markRecoveryPhraseShown()
         case .wrongPin:
             errorText = "Wrong PIN."
+        case .waiting:
+            errorText = nil // the countdown shows instead
         case .refused(let message):
             errorText = message
         }

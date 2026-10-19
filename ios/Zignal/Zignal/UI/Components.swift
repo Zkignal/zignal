@@ -38,6 +38,55 @@ private struct PinInput: ViewModifier {
     }
 }
 
+extension View {
+    /// Keeps PIN entry predictable when the app loses and regains focus. The privacy cover
+    /// dismisses the keyboard whenever Zignal isn't active (app switcher, Control Center, a
+    /// system alert), and iOS silently clears a secure field on the first key typed after that.
+    /// So the field is emptied when the app goes inactive and focused again when it returns:
+    /// every entry starts clean instead of quietly losing digits.
+    func resetsPinEntry(_ pin: Binding<String>, focused: FocusState<Bool>.Binding) -> some View {
+        modifier(PinEntryReset(pin: pin, focused: focused))
+    }
+}
+
+private struct PinEntryReset: ViewModifier {
+    @Environment(\.scenePhase) private var scenePhase
+    @Binding var pin: String
+    var focused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        content.onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                focused.wrappedValue = true
+            } else {
+                pin = ""
+                focused.wrappedValue = false
+            }
+        }
+    }
+}
+
+/// The line under a PIN field: the wrong-PIN countdown, "Checking PIN…", or the last error.
+struct PinStatus: View {
+    let wait: TimeInterval
+    let checking: Bool
+    let error: String?
+
+    var body: some View {
+        Group {
+            if wait > 0 {
+                Text(AppModel.waitMessage(wait)).foregroundStyle(.red).monospacedDigit()
+            } else if checking {
+                Text("Checking PIN…").foregroundStyle(.secondary)
+            } else {
+                Text(error ?? " ").foregroundStyle(.red)
+            }
+        }
+        .font(.footnote)
+        .multilineTextAlignment(.center)
+    }
+}
+
 /// A 60-digit safety number as 12 groups of 5, read left to right.
 struct SafetyNumberGrid: View {
     let number: String

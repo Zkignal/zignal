@@ -47,6 +47,12 @@ struct AttemptLimiterTests {
         #expect(abs(wait(40) - 3600) < 0.01)
         #expect(wait(5, after: 31) == 0)
     }
+
+    @Test func waitMessageCountsDownInMinutesAndSeconds() {
+        #expect(AppModel.waitMessage(27) == "Too many wrong PINs. Try again in 0:27.")
+        #expect(AppModel.waitMessage(90.2) == "Too many wrong PINs. Try again in 1:31.")
+        #expect(AppModel.waitMessage(3600) == "Too many wrong PINs. Try again in 60:00.")
+    }
 }
 
 struct ProfileStoreTests {
@@ -197,7 +203,7 @@ struct ProfileSessionTests {
         let keys = try ProfileKeyset(secret: secureRandom(32))
         try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
 
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         let demo = try #require(session.contacts.first)
@@ -210,7 +216,7 @@ struct ProfileSessionTests {
         #expect(session.errorText == nil)
 
         // Reopen from disk: history is intact and both ratchets carry on.
-        let reopened = try ProfileSession.open(keys: keys, store: store)
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
         reopened.demoReplyDelay = .zero
         #expect(reopened.messages.count == 4)
         await reopened.send("after restart", to: demo.id)
@@ -225,12 +231,12 @@ struct ProfileSessionTests {
         try store.reset(with: [(ProfileSession.emptyData(keys: real), real),
                                (ProfileSession.emptyData(keys: decoy), decoy)])
 
-        let session = try ProfileSession.open(keys: real, store: store)
+        let session = try await ProfileSession.open(keys: real, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         #expect(session.contacts.count == 1)
 
-        let other = try ProfileSession.open(keys: decoy, store: store)
+        let other = try await ProfileSession.open(keys: decoy, store: store)
         #expect(other.contacts.isEmpty)
         #expect(other.messages.isEmpty)
     }
@@ -241,14 +247,14 @@ struct ProfileSessionTests {
         let created = Date(timeIntervalSince1970: 1_700_000_000)
         try store.reset(with: [(ProfileSession.emptyData(keys: keys, walletCreated: created), keys)])
 
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         #expect(session.walletCreated == created)
         #expect(!session.recoveryPhraseShown)
         #expect(session.belongs(to: keys))
         #expect(!session.belongs(to: try ProfileKeyset(secret: secureRandom(32))))
 
         session.markRecoveryPhraseShown()
-        let reopened = try ProfileSession.open(keys: keys, store: store)
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
         #expect(reopened.recoveryPhraseShown)
         #expect(reopened.walletCreated == created)
     }
@@ -256,7 +262,7 @@ struct ProfileSessionTests {
     @Test func closedSessionNeverSavesAgain() async throws {
         let store = try makeTempStore()
         let keys = try ProfileKeyset(secret: secureRandom(32))
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         let demo = try #require(session.contacts.first)
@@ -270,7 +276,7 @@ struct ProfileSessionTests {
     @Test func lockDuringDeliveryDropsTheReply() async throws {
         let store = try makeTempStore()
         let keys = try ProfileKeyset(secret: secureRandom(32))
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         let demo = try #require(session.contacts.first)
@@ -287,7 +293,7 @@ struct ProfileSessionTests {
     @Test func oversizedMessageIsRefused() async throws {
         let store = try makeTempStore()
         let keys = try ProfileKeyset(secret: secureRandom(32))
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         let demo = try #require(session.contacts.first)
@@ -299,7 +305,7 @@ struct ProfileSessionTests {
     @Test func longMessageUsesSeveralMemos() async throws {
         let store = try makeTempStore()
         let keys = try ProfileKeyset(secret: secureRandom(32))
-        let session = try ProfileSession.open(keys: keys, store: store)
+        let session = try await ProfileSession.open(keys: keys, store: store)
         session.demoReplyDelay = .zero
         await session.startDemoChat()
         let demo = try #require(session.contacts.first)
@@ -308,5 +314,75 @@ struct ProfileSessionTests {
         let sent = try #require(session.messages(with: demo.id).last(where: { $0.outgoing }))
         #expect(sent.memoCount > 1)
         #expect(sent.memoCount <= 15)
+    }
+
+    @Test func demoContactWithoutStateIsRemovedOnOpen() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        session.demoReplyDelay = .zero
+        await session.startDemoChat()
+        session.close()
+
+        // Simulate a crash that lost the demo contact's state.
+        var saved = try #require(try store.load(keys))
+        saved.demoContact = nil
+        try store.save(saved, keys)
+
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(reopened.contacts.isEmpty)
+        #expect(reopened.messages.isEmpty)
+        #expect(try store.load(keys)?.contacts.isEmpty == true)
+    }
+}
+
+/// Times each step of unlocking with the app's real Argon2id settings. The numbers are
+/// printed to the test log (Report navigator, Cmd+9, latest test run, search "TIMING"), so a
+/// slow step can be found without adding any logging to the app. Other tests (also running
+/// Argon2id) run at the same time, so the numbers are an upper bound. The limits are generous:
+/// they catch a step that has become far slower, not small differences between machines.
+@MainActor
+struct UnlockTimingTests {
+    @Test func unlockStepsStayFast() async throws {
+        let clock = ContinuousClock()
+
+        var start = clock.now
+        let created = try VaultOps.create(realPin: "58391402", duressPin: "26047118",
+                                          wipeRealOnDuress: false)
+        let createTime = start.duration(to: clock.now)
+
+        start = clock.now
+        let opened = try VaultOps.unlock(vault: created.vault, pin: "58391402")
+        let unlockTime = start.duration(to: clock.now)
+        let secret = try #require(opened.secret)
+
+        // A profile with some history, next to the other profile's file.
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secret)
+        let decoy = try ProfileKeyset(secret: created.decoySecret)
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys),
+                               (ProfileSession.emptyData(keys: decoy), decoy)])
+        let first = try await ProfileSession.open(keys: keys, store: store)
+        first.demoReplyDelay = .zero
+        await first.startDemoChat()
+        let demo = try #require(first.contacts.first)
+        for i in 1...10 { await first.send("message \(i)", to: demo.id) }
+        first.close()
+
+        start = clock.now
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        let openTime = start.duration(to: clock.now)
+        #expect(session.messages.count == 22)
+
+        print("TIMING set up both PINs (Argon2id x2): \(ms(createTime)) ms")
+        print("TIMING check one PIN (Argon2id x1): \(ms(unlockTime)) ms")
+        print("TIMING open profile (decrypt, restore, re-seal all files): \(ms(openTime)) ms")
+        #expect(unlockTime < .seconds(3), "Checking one PIN took \(ms(unlockTime)) ms")
+        #expect(openTime < .seconds(1), "Opening the profile took \(ms(openTime)) ms")
+    }
+
+    private func ms(_ duration: Duration) -> Int {
+        let (seconds, attoseconds) = duration.components
+        return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
     }
 }
