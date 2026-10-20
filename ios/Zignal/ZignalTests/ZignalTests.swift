@@ -386,3 +386,272 @@ struct UnlockTimingTests {
         return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
     }
 }
+
+// MARK: - Wallet support (Block 4)
+
+/// A made-up mainnet unified address of realistic length (an Orchard-only address is 106
+/// characters). Only its characters matter here; it is never sent anywhere.
+private let sampleAddress = "u1" + String(repeating: "qpzry9x8gf2tvdw0s3jn54khce6mua7l", count: 4).prefix(104)
+
+struct PaymentRequestTests {
+    @Test func memosBecomeZeroValuePaymentsInOneRequest() throws {
+        let first = Data([0xFF]) + Data(repeating: 0xA5, count: 511)
+        let second = Data([0xFF]) + Data(repeating: 0x00, count: 511)
+        let uri = PaymentRequest.memos([first, second], to: sampleAddress)
+        #expect(uri == "zcash:?address=\(sampleAddress)&amount=0&memo=\(Base64URL.encode(first))"
+            + "&address.1=\(sampleAddress)&amount.1=0&memo.1=\(Base64URL.encode(second))")
+        #expect(Base64URL.decode(Base64URL.encode(first)) == first)
+    }
+
+    @Test func splitPaymentsUseIndexedParameters() {
+        #expect(PaymentRequest.payments([20_000, 20_000], to: sampleAddress)
+            == "zcash:?address=\(sampleAddress)&amount=0.0002&address.1=\(sampleAddress)&amount.1=0.0002")
+    }
+
+    @Test func acceptsOnlyPlainShieldedAddresses() {
+        #expect(PaymentRequest.isShieldedAddress(sampleAddress))
+        // Anything that could add or change request parameters, or isn't a unified address.
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress + "&amount=5"))
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress + "?memo=x"))
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress + "%26amount%3D5"))
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress + " "))
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress.uppercased()))
+        #expect(!PaymentRequest.isShieldedAddress("t1" + sampleAddress.dropFirst(2)))
+        #expect(!PaymentRequest.isShieldedAddress("zs1" + sampleAddress.dropFirst(2)))
+        #expect(!PaymentRequest.isShieldedAddress("utest1" + sampleAddress.dropFirst(2)))
+        #expect(!PaymentRequest.isShieldedAddress("u1qpzry9"))
+        #expect(!PaymentRequest.isShieldedAddress(""))
+        // "b", "i", "o" and "1" are not bech32 data characters.
+        #expect(!PaymentRequest.isShieldedAddress(sampleAddress.dropLast() + "b"))
+    }
+
+    @Test func amountsAreWrittenAsPlainDecimals() {
+        #expect(PaymentRequest.zec(0) == "0")
+        #expect(PaymentRequest.zec(1) == "0.00000001")
+        #expect(PaymentRequest.zec(10_000) == "0.0001")
+        #expect(PaymentRequest.zec(100_000_000) == "1")
+        #expect(PaymentRequest.zec(123_456_789) == "1.23456789")
+        #expect(ZecFormat.string(10_000) == "0.0001 ZEC")
+        #expect(ZecFormat.string(-5_000) == "-0.00005 ZEC")
+    }
+}
+
+struct Base64URLTests {
+    @Test func roundTripsEveryLength() throws {
+        for length in 0...70 {
+            let bytes = try secureRandom(length)
+            let text = Base64URL.encode(bytes)
+            #expect(!text.contains("=") && !text.contains("+") && !text.contains("/"))
+            #expect(Base64URL.decode(text) == bytes)
+        }
+    }
+
+    @Test func rejectsPaddingAndOtherCharacters() {
+        #expect(Base64URL.decode("QQ==") == nil)
+        #expect(Base64URL.decode("QQ.Q") == nil)
+        #expect(Base64URL.decode("QQ\u{00E9}") == nil)
+        #expect(Base64URL.decode("Q") == nil)
+    }
+}
+
+struct InviteCodeTests {
+    /// The invite layout must match zkw-core's: this reads a real invite from the core.
+    @Test func readsTheInviterFromARealInvite() throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
+        let invite = try inbox.createInvite(myAddress: Data(sampleAddress.utf8))
+        let code = InviteCode.encode(invite)
+        #expect(code.hasPrefix("zignal:"))
+        #expect(InviteCode.decode(code) == invite)
+        #expect(InviteCode.inviterID(invite) == (try inbox.myId()))
+        #expect(InviteCode.address(invite) == sampleAddress)
+        // Fits one QR code: 2,953 bytes at low error correction, 2,331 at medium.
+        #expect(code.utf8.count < 2_331, "Invite code is \(code.utf8.count) characters")
+    }
+
+    @Test func toleratesWhitespaceAndCase() throws {
+        let invite = Data("ZWI1".utf8) + Data([0, 3]) + Data("u1q".utf8) + (try secureRandom(48))
+        let code = InviteCode.encode(invite)
+        let body = String(code.dropFirst(InviteCode.prefix.count))
+        #expect(InviteCode.decode(" \(code)\n") == invite)
+        #expect(InviteCode.decode("ZIGNAL:" + body) == invite)
+        #expect(InviteCode.decode(body) == invite)
+        let wrapped = body.enumerated().map { $0.offset % 40 == 39 ? "\($0.element)\n" : "\($0.element)" }.joined()
+        #expect(InviteCode.decode(wrapped) == invite)
+    }
+
+    @Test func rejectsWhatIsntAnInvite() throws {
+        #expect(InviteCode.decode("") == nil)
+        #expect(InviteCode.decode("zignal:") == nil)
+        #expect(InviteCode.decode("zcash:\(sampleAddress)") == nil)
+        #expect(InviteCode.decode(InviteCode.encode(Data("ZWI2".utf8) + (try secureRandom(60)))) == nil)
+        // An address length that runs past the end leaves no room for the inviter's key.
+        let short = Data("ZWI1".utf8) + Data([0x01, 0x00]) + Data(repeating: 0x71, count: 40)
+        #expect(InviteCode.inviterID(short) == nil)
+        #expect(InviteCode.address(short) == nil)
+    }
+}
+
+/// Why the app reads each message at its block time: the core finds a message's chat by a
+/// tag that changes every day, and accepts only yesterday's, today's and tomorrow's.
+struct MessageTimingTests {
+    @Test func aMessageIsReadAtTheTimeItWasSent() throws {
+        let now = unixNow()
+        let alice = try ZkwInbox(seed: ProfileKeyset(secret: secureRandom(32)).identitySeed, now: now)
+        let bob = try ZkwInbox(seed: ProfileKeyset(secret: secureRandom(32)).identitySeed, now: now)
+        let invite = try bob.createInvite(myAddress: Data("u1bob".utf8))
+        let start = try alice.startFromInvite(invite: invite, myAddress: Data("u1alice".utf8), firstText: "hi")
+        var started = false
+        for memo in start.memos {
+            if case .newSession(_, let text)? = try bob.receive(memo: memo, now: now) { started = text == "hi" }
+        }
+        #expect(started)
+
+        let reply = try bob.sendText(peer: try alice.myId(), text: "reply", now: now)
+        let threeDaysLater = now + 3 * 86_400
+        for memo in reply.memos {
+            #expect(try alice.receive(memo: memo, now: threeDaysLater) == nil)
+        }
+        var read: String?
+        for memo in reply.memos {
+            if case .message(_, let text)? = try alice.receive(memo: memo, now: now + 75) { read = text }
+        }
+        #expect(read == "reply")
+    }
+}
+
+struct IncomingMemosTests {
+    private func output(fromUs: Bool = false, change: Bool = false, shielded: Bool = true,
+                        _ memo: WalletOutput.Memo) -> WalletOutput {
+        WalletOutput(fromUs: fromUs, isChange: change, isShielded: shielded, memo: memo)
+    }
+
+    @Test func keepsOnlyBinaryMemosSentToUs() throws {
+        let body = [UInt8]("ZW".utf8) + [2, 1]
+        let memos = try #require(IncomingMemos.extract(from: [
+            output(.binary(body)),
+            output(fromUs: true, .binary([1, 2, 3])),
+            output(change: true, .binary([4, 5, 6])),
+            output(shielded: false, .binary([7, 8, 9])),
+            output(.other),
+        ]))
+        #expect(memos.count == 1)
+        let memo = try #require(memos.first)
+        #expect(memo.count == 512)
+        #expect(memo.first == 0xFF)
+        #expect([UInt8](memo[1...4]) == body)
+        #expect(memo.dropFirst(5).allSatisfy { $0 == 0 })
+    }
+
+    @Test func waitsForMemosThatArentFetchedYet() {
+        #expect(IncomingMemos.extract(from: [output(.binary([1])), output(.notFetched)]) == nil)
+        // Our own outputs don't matter, fetched or not.
+        #expect(IncomingMemos.extract(from: [output(fromUs: true, .notFetched)]) == [])
+    }
+
+    @Test func rejectsOversizedMemos() {
+        #expect(IncomingMemos.fullMemo(binary: [UInt8](repeating: 1, count: 511))?.count == 512)
+        #expect(IncomingMemos.fullMemo(binary: [UInt8](repeating: 1, count: 512)) == nil)
+    }
+}
+
+struct WalletSettingsTests {
+    @Test func parsesServers() {
+        #expect(WalletSettings.Server("zec.rocks") == WalletSettings.Server(host: "zec.rocks", port: 443))
+        #expect(WalletSettings.Server(" LWD1.zcash-infra.com:9067 \n") == WalletSettings.Server(host: "lwd1.zcash-infra.com", port: 9067))
+        #expect(WalletSettings.Server("127.0.0.1:9067") == WalletSettings.Server(host: "127.0.0.1", port: 9067))
+    }
+
+    @Test(arguments: ["", ":443", "host:", "host:0", "host:65536", "a:b:c", "https://zec.rocks",
+                      "zec.rocks/path", "zec rocks", "zec.rocks:44 3", "zéc.rocks", "[::1]:443"])
+    func rejectsAnythingElse(text: String) {
+        #expect(WalletSettings.Server(text) == nil)
+    }
+
+    @Test func defaultsHaveTorOffAndKnownServers() {
+        #expect(!WalletSettings.standard.torEnabled)
+        #expect(WalletSettings.standard.servers.first == WalletSettings.Server(host: "zec.rocks", port: 443))
+        #expect(WalletSettings.standard.servers.allSatisfy { WalletSettings.Server($0.label) == $0 })
+    }
+
+    @Test func olderProfileFilesHaveNoWalletFields() throws {
+        let old = Data(#"{"version":1,"inbox":"AQ==","contacts":[],"messages":[]}"#.utf8)
+        let data = try JSONDecoder().decode(ProfileData.self, from: old)
+        #expect(data.walletRestored == nil)
+        #expect(data.walletSettings == nil)
+        #expect(data.processedTransactions == nil)
+    }
+}
+
+@MainActor
+struct WalletSessionTests {
+    @Test func settingsPersistAndDefaultsStayUnwritten() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletSettings == .standard)
+        let own = WalletSettings(servers: [.init(host: "lwd.example.net", port: 9067)], torEnabled: true)
+        await session.updateWalletSettings(own)
+        #expect(try store.load(keys)?.walletSettings == own)
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(reopened.walletSettings == own)
+
+        await reopened.updateWalletSettings(.standard)
+        #expect(try store.load(keys)?.walletSettings == nil)
+        // An empty server list is never saved.
+        await reopened.updateWalletSettings(WalletSettings(servers: [], torEnabled: true))
+        #expect(reopened.walletSettings == .standard)
+    }
+
+    @Test func restoredFlagIsSavedOnlyForRestoredProfiles() async throws {
+        let store = try makeTempStore()
+        let fresh = try ProfileKeyset(secret: secureRandom(32))
+        let restored = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: fresh), fresh),
+                               (ProfileSession.emptyData(keys: restored, restored: true), restored)])
+        _ = try await ProfileSession.open(keys: fresh, store: store)
+        _ = try await ProfileSession.open(keys: restored, store: store)
+        #expect(try store.load(fresh)?.walletRestored == nil)
+        #expect(try store.load(restored)?.walletRestored == true)
+    }
+
+    @Test func interruptedSendShowsAsFailedAndKeepsItsMemos() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        var data = try ProfileSession.emptyData(keys: keys)
+        let peer = try secureRandom(32)
+        let memos = [Data([0xFF]) + (try secureRandom(511))]
+        var message = ChatMessage.outgoing("hello", to: peer, memos: 1)
+        message.status = .sending
+        message.pendingMemos = memos
+        data.contacts = [Contact(id: peer, name: "Contact", added: Date())]
+        data.messages = [message]
+        try store.reset(with: [(data, keys)])
+
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        let reloaded = try #require(session.messages.first)
+        #expect(reloaded.status == .failed)
+        #expect(reloaded.pendingMemos == memos)
+        #expect(try store.load(keys)?.messages.first?.status == .failed)
+    }
+
+    @Test func realChatsWaitForTheWallet() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        let before = try store.load(keys)
+
+        // No wallet in tests: nothing is encrypted, saved or sent.
+        let started = await session.acceptInvite("zignal:AAAA", firstText: "hi")
+        #expect(started == nil)
+        #expect(session.errorText == ZignalError.walletNotReady.errorDescription)
+        #expect(session.contacts.isEmpty)
+        let prepared = await session.prepareForChatting()
+        #expect(!prepared)
+        await #expect(throws: ZignalError.self) { try await session.makeInvite() }
+        #expect(try store.load(keys) == before)
+    }
+}

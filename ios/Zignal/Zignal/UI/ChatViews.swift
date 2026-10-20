@@ -4,13 +4,16 @@ struct ChatListView: View {
     @Environment(AppModel.self) private var model
     private let session: ProfileSession
     @State private var showPhrase = false
+    @State private var showInvite = false
+    @State private var addContact = false
+    @State private var path: [Data] = []
 
     init(session: ProfileSession) {
         self.session = session
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if !session.recoveryPhraseShown {
                     Section {
@@ -23,11 +26,12 @@ struct ChatListView: View {
                         Text("Without it, a lost phone means a lost wallet.")
                     }
                 }
+                WalletSection(session: session)
                 if session.contacts.isEmpty {
                     ContentUnavailableView {
                         Label("No conversations", systemImage: "bubble.left.and.bubble.right")
                     } description: {
-                        Text("Try end-to-end encrypted chat with a demo contact that lives on this phone. Real contacts arrive with the wallet.")
+                        Text("Add a contact from New chat with an invite, or try the encrypted chat with a demo contact that lives on this phone and needs no ZEC.")
                     } actions: {
                         Button("Start demo chat") { Task { await session.startDemoChat() } }
                             .buttonStyle(.borderedProminent)
@@ -54,6 +58,11 @@ struct ChatListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button("Show my invite", systemImage: "qrcode") { showInvite = true }
+                            .disabled(!walletReady)
+                        Button("Scan or paste an invite", systemImage: "qrcode.viewfinder") { addContact = true }
+                            .disabled(!walletReady)
+                        Divider()
                         Button("Start demo chat", systemImage: "sparkles") {
                             Task { await session.startDemoChat() }
                         }
@@ -67,10 +76,19 @@ struct ChatListView: View {
                 RecoveryPhraseView(session: session)
                     .environment(model)
             }
+            .sheet(isPresented: $showInvite) {
+                ShowInviteView(session: session)
+            }
+            .sheet(isPresented: $addContact) {
+                AcceptInviteView(session: session) { peer in path = [peer] }
+            }
         }
         // One alert for the whole stack, so a pushed screen never shows a second copy.
         .errorAlert(session)
     }
+
+    /// Invites need a new address, so the wallet must be running.
+    private var walletReady: Bool { session.wallet?.canTransact == true }
 }
 
 private struct ChatRow: View {
@@ -114,7 +132,10 @@ struct ConversationView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(thread) { message in
-                        MessageBubble(message: message).id(message.id)
+                        MessageBubble(message: message, showsStatus: !isDemo) {
+                            Task { await session.retry(message.id) }
+                        }
+                        .id(message.id)
                     }
                 }
                 .padding()
@@ -140,6 +161,12 @@ struct ConversationView: View {
 
     private var composer: some View {
         VStack(alignment: .trailing, spacing: 4) {
+            if let walletHint {
+                Text(walletHint)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if draft.utf8.count > ProfileSession.maxTextBytes * 3 / 4 {
                 Text("\(draft.utf8.count) / \(ProfileSession.maxTextBytes)")
                     .font(.caption2)
@@ -167,9 +194,36 @@ struct ConversationView: View {
 
     private var tooLong: Bool { draft.utf8.count > ProfileSession.maxTextBytes }
 
+    private var isDemo: Bool { session.contact(peer)?.isDemo == true }
+
+    /// The network fee for a one-memo message (ZIP-317: two actions at 5,000 zatoshis).
+    private static let smallestFee: Int64 = 10_000
+
     private var canSend: Bool {
-        session.contact(peer)?.isDemo == true && !tooLong
-            && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard session.contact(peer) != nil, !tooLong,
+              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return isDemo || walletHint == nil
+    }
+
+    /// Why a real message can't go out yet, if it can't. A longer message can still fail for
+    /// lack of funds; it then shows as not sent, with tap to send again.
+    private var walletHint: String? {
+        guard !isDemo, session.contact(peer) != nil else { return nil }
+        guard let wallet = session.wallet else {
+            return "The wallet is starting. Sending turns on when it's ready."
+        }
+        if case .failed = wallet.phase {
+            return "The wallet stopped with an error. See Wallet on the chat list."
+        }
+        guard wallet.canTransact else {
+            return "The wallet is starting. Sending turns on when it's ready."
+        }
+        if wallet.spendable < Self.smallestFee {
+            return wallet.pending > 0
+                ? "Waiting for ZEC to confirm before the next message can go out."
+                : "Add funds to send: each message costs about 0.0001 ZEC."
+        }
+        return nil
     }
 
     private func send() {
@@ -181,6 +235,9 @@ struct ConversationView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    /// Real contacts show sending and delivery; demo messages never touch the network.
+    let showsStatus: Bool
+    let retry: () -> Void
 
     var body: some View {
         HStack {
@@ -194,9 +251,18 @@ private struct MessageBubble: View {
                     .foregroundStyle(message.outgoing ? Color.white : Color.primary)
                     .background(message.outgoing ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
                                 in: .rect(cornerRadius: 16))
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                if showsStatus && message.outgoing && message.status == .failed {
+                    Button(action: retry) {
+                        Label("Not sent. Tap to send again.", systemImage: "exclamationmark.circle")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(.red)
+                } else {
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             if !message.outgoing { Spacer(minLength: 48) }
         }
@@ -205,7 +271,14 @@ private struct MessageBubble: View {
     private var caption: String {
         let time = message.date.formatted(date: .omitted, time: .shortened)
         guard message.outgoing else { return time }
-        return message.memoCount == 1 ? "\(time), 1 memo" : "\(time), \(message.memoCount) memos"
+        let memos = message.memoCount == 1 ? "1 memo" : "\(message.memoCount) memos"
+        guard showsStatus else { return "\(time), \(memos)" }
+        switch message.status {
+        case .sending: return "\(time), \(memos), sending"
+        case .sent: return "\(time), \(memos), sent"
+        case .delivered: return "\(time), \(memos), delivered"
+        case .failed, .received: return "\(time), \(memos)"
+        }
     }
 }
 

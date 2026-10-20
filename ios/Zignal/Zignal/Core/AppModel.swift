@@ -67,7 +67,7 @@ final class AppModel {
             let walletCreated = restore?.created ?? Date()
             let store = self.store
             // Argon2id (once per PIN) and writing both profiles run off the main thread.
-            let realKeys = try await Task.detached(priority: .userInitiated) {
+            let (realKeys, seed) = try await Task.detached(priority: .userInitiated) {
                 let created = try VaultOps.create(realPin: realPin, duressPin: duressPin,
                                                   wipeRealOnDuress: wipeRealOnDuress,
                                                   restoredSecret: restoredSecret)
@@ -78,18 +78,19 @@ final class AppModel {
                 try Keychain.delete(.fileKey)
                 try store.prepare()
                 try store.reset(with: [
-                    (ProfileSession.emptyData(keys: realKeys, walletCreated: walletCreated), realKeys),
+                    (ProfileSession.emptyData(keys: realKeys, walletCreated: walletCreated,
+                                              restored: restoredSecret != nil), realKeys),
                     (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
                 ])
                 // The vault is stored last: if anything above fails, setup simply runs again.
                 try Keychain.write(created.vault, to: .vault)
-                return realKeys
+                return (realKeys, try walletSeed(profileSecret: created.realSecret))
             }.value
             UserDefaults.standard.set(true, forKey: Self.installedKey)
             AttemptLimiter.reset()
             lockedUntil = nil
             let session = try await ProfileSession.open(keys: realKeys, store: store)
-            show(session)
+            show(session, walletSeed: seed)
         } catch {
             errorText = Self.describe(error)
         }
@@ -125,7 +126,10 @@ final class AppModel {
             AttemptLimiter.reset()
             lockedUntil = nil
             let keys = try ProfileKeyset(secret: secret)
-            show(try await ProfileSession.open(keys: keys, store: store))
+            let seed = try await Task.detached(priority: .userInitiated) {
+                try walletSeed(profileSecret: secret)
+            }.value
+            show(try await ProfileSession.open(keys: keys, store: store), walletSeed: seed)
         } catch {
             errorText = Self.describe(error)
         }
@@ -152,13 +156,15 @@ final class AppModel {
         return lockedUntil
     }
 
-    /// Shows an opened profile, unless the app went to the background while it was opening.
-    private func show(_ session: ProfileSession) {
+    /// Shows an opened profile and starts its wallet, unless the app went to the background
+    /// while it was opening.
+    private func show(_ session: ProfileSession, walletSeed: Data) {
         if inBackground {
             session.close()
             phase = .locked
         } else {
             phase = .unlocked(session)
+            Task { await session.startWallet(seed: walletSeed) }
         }
     }
 

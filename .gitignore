@@ -6,3 +6,10 @@ out/
 xcuserdata/
 zk-messenger-plan*.md
 *.zip
+
+# Zcash Sapling parameters: public, ~51 MB, fetched by the params script
+ios/Zignal/Zignal/SaplingParams/
+*.params
+
+# Private working files
+Zignal-block4-*
