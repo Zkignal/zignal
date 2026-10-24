@@ -113,6 +113,30 @@ struct ProfileStore {
         try write(profiles)
     }
 
+    /// Deletes every profile file except this profile's, after writing the same number of
+    /// fresh filler files at the same size. Used after a silent wipe: the wiped profile's file
+    /// can't be opened without its recovery phrase, but it shouldn't stay on the phone at all.
+    /// The file count and size stay as they were, so the folder doesn't show that a profile left.
+    func removeOthers(keeping keys: ProfileKeyset) throws {
+        let keep = fileURL(for: keys)
+        let others = try profileFiles().filter { $0 != keep }
+        guard let sample = others.first else { return }
+        let deviceKey = try deviceKey(createIfMissing: false)
+        let sealedSize = try Data(contentsOf: sample).count
+        guard sealedSize > 28 else { throw ZignalError.damagedProfile }
+        defer { equalizeTimestamps() }
+        // Fillers first, so an interruption never leaves fewer files than before.
+        for _ in others {
+            let filler = try ChaChaPoly.seal(try secureRandom(sealedSize - 28), using: deviceKey,
+                                             authenticating: Self.outerAD).combined
+            try filler.write(to: fileURL(named: Self.hex(try secureRandom(16))),
+                             options: [.atomic, .completeFileProtection])
+        }
+        for url in others {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
     func fileURL(for keys: ProfileKeyset) -> URL {
         fileURL(named: Self.hex(keys.subkeyBytes(KeyLabel.fileName, count: 16)))
     }

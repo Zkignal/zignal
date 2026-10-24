@@ -46,6 +46,12 @@ struct WalletSettings: Codable, Equatable, Sendable {
     static let standard = WalletSettings(servers: defaultServers, torEnabled: false)
 }
 
+extension ProfileKeyset {
+    /// Names this profile's wallet files ("c_<alias>_data.db" and so on). Derived from the
+    /// profile key, so it says nothing about which profile is which.
+    var walletAlias: String { subkeyBytes(KeyLabel.walletAlias, count: 8).hexString }
+}
+
 /// ZIP-321 payment requests for the wallet.
 enum PaymentRequest {
     private static let bech32Characters = Set("qpzry9x8gf2tvdw0s3jn54khce6mua7l")

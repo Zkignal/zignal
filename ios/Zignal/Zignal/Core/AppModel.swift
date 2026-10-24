@@ -115,7 +115,8 @@ final class AppModel {
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
-            if result.vault != vault {
+            let wiped = result.vault != vault
+            if wiped {
                 try Keychain.write(result.vault, to: .vault) // a silent wipe ran
             }
             guard let secret = result.secret else {
@@ -126,6 +127,13 @@ final class AppModel {
             AttemptLimiter.reset()
             lockedUntil = nil
             let keys = try ProfileKeyset(secret: secret)
+            if wiped {
+                // Everything of the wiped profile goes: its profile file and its wallet files.
+                // Failures are ignored on purpose: under duress the decoy must still open
+                // normally, and a later wipe attempt runs this again.
+                try? store.removeOthers(keeping: keys)
+                WalletFiles.removeWallets(except: keys.walletAlias)
+            }
             let seed = try await Task.detached(priority: .userInitiated) {
                 try walletSeed(profileSecret: secret)
             }.value

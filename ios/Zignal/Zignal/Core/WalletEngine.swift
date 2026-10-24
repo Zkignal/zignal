@@ -344,6 +344,19 @@ struct WalletFiles {
         }
     }
 
+    /// Deletes every wallet file except those of the profile with `keepAlias`. Called after a
+    /// silent wipe: the wiped profile's wallet database (addresses, transactions, memos) would
+    /// otherwise stay on the phone. Its alias can't be known any more, but everything that isn't
+    /// the open profile's is the wiped profile's. Deleting a file on iOS also destroys its
+    /// per-file encryption key.
+    static func removeWallets(except keepAlias: String, root: URL = WalletFiles.standardRoot) {
+        let keep = "c_\(keepAlias)_"
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else { return }
+        for name in names where !name.hasPrefix(keep) {
+            try? FileManager.default.removeItem(at: root.appending(path: name))
+        }
+    }
+
     /// Complete data protection on everything the SDK has created so far. New files inherit
     /// it from the folder; this covers files made before that setting existed. Links to the
     /// parameters inside the app are skipped: the app's own files are read-only.

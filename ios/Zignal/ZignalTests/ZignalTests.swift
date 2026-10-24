@@ -583,6 +583,65 @@ struct WalletSettingsTests {
     }
 }
 
+struct WalletWipeTests {
+    @Test func aliasIsStableAndDiffersPerProfile() throws {
+        let secret = try secureRandom(32)
+        let one = try ProfileKeyset(secret: secret)
+        let again = try ProfileKeyset(secret: secret)
+        let other = try ProfileKeyset(secret: secureRandom(32))
+        #expect(one.walletAlias.count == 16)
+        #expect(one.walletAlias == again.walletAlias)
+        #expect(one.walletAlias != other.walletAlias)
+    }
+
+    /// After a silent wipe, the wiped profile's file is gone, replaced by filler of the same
+    /// size, and the open profile is untouched.
+    @Test func wipeLeavesOnlyTheOpenProfilesFile() throws {
+        let store = try makeTempStore()
+        let real = try ProfileKeyset(secret: secureRandom(32))
+        let decoy = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: real), real),
+                               (ProfileSession.emptyData(keys: decoy), decoy)])
+        let before = try fileNames(store)
+        let decoyData = try store.load(decoy)
+
+        try store.removeOthers(keeping: decoy)
+
+        let after = try fileNames(store)
+        #expect(after.count == before.count)
+        #expect(!FileManager.default.fileExists(atPath: store.fileURL(for: real).path))
+        #expect(try store.load(real) == nil)
+        #expect(try store.load(decoy) == decoyData)
+        let sizes = Set(try after.map {
+            try FileManager.default.attributesOfItem(atPath: store.directory.appending(path: $0).path)[.size] as? Int
+        })
+        #expect(sizes.count == 1)
+    }
+
+    /// After a silent wipe, only the open profile's wallet files may remain.
+    @Test func wipeLeavesOnlyTheOpenProfilesWallet() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "zignal-wallet-\(UUID().uuidString)",
+                                                    directoryHint: .isDirectory)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let keep = "aaaaaaaaaaaaaaaa", wiped = "bbbbbbbbbbbbbbbb"
+        for alias in [keep, wiped] {
+            try Data("db".utf8).write(to: root.appending(path: "c_\(alias)_data.db"))
+            try Data("wal".utf8).write(to: root.appending(path: "c_\(alias)_data.db-wal"))
+            let cache = root.appending(path: "c_\(alias)_fs_cache", directoryHint: .isDirectory)
+            try fm.createDirectory(at: cache, withIntermediateDirectories: true)
+            try Data("block".utf8).write(to: cache.appending(path: "1.block"))
+            try fm.createSymbolicLink(at: root.appending(path: "c_\(alias)_sapling-spend.params"),
+                                      withDestinationURL: root.appending(path: "missing.params"))
+        }
+        WalletFiles.removeWallets(except: keep, root: root)
+        let left = try fm.contentsOfDirectory(atPath: root.path).sorted()
+        #expect(left == ["c_\(keep)_data.db", "c_\(keep)_data.db-wal", "c_\(keep)_fs_cache",
+                         "c_\(keep)_sapling-spend.params"])
+    }
+}
+
 @MainActor
 struct WalletSessionTests {
     @Test func settingsPersistAndDefaultsStayUnwritten() async throws {

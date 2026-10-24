@@ -213,7 +213,7 @@ final class ProfileSession {
     func startWallet(seed: Data) async {
         guard !isClosed, wallet == nil else { return }
         let engine = WalletEngine(seed: seed,
-                                  alias: keys.subkeyBytes(KeyLabel.walletAlias, count: 8).hexString,
+                                  alias: keys.walletAlias,
                                   settings: walletSettings,
                                   restoreFrom: walletRestored ? walletCreated : nil)
         engine.onChange = { [weak self] in await self?.refreshFromWallet() }
