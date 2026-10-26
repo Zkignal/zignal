@@ -13,7 +13,7 @@ cargo test
 | Test file | What it checks |
 |---|---|
 | `tests/vectors.rs` | Byte-for-byte agreement with `../zkw-ref/vectors/test_vectors.json` |
-| `tests/protocol.rs` | End to end: invite and cold-contact handshakes, ratchet, out-of-order delivery, replay, tampering, forward secrecy, duress vault |
+| `tests/protocol.rs` | End to end: invite and cold-contact handshakes, ratchet, out-of-order delivery, replay, tampering, forward secrecy, three-PIN vault (unlock, duress, panic) |
 | `tests/persist.rs` | Encrypted save/restore across restarts (mid-conversation, skipped messages, cold contacts, replays), prekey rotation, profile key derivation |
 
 ## Modules
@@ -25,7 +25,7 @@ cargo test
 | `src/envelope.rs` | Fixed 512-byte memo format, chunking, reassembly | `zkw/envelope.py` |
 | `src/ratchet.rs` | Double Ratchet with header encryption, transactional decrypt | `zkw/ratchet.py` |
 | `src/session.rs` | Hybrid PQXDH handshake, sessions, HELLO/BUNDLE flow, inbox, replay protection | `zkw/session.py` |
-| `src/vault.rs` | Duress PIN vault (Argon2id, two identical slots, optional silent wipe) | `zkw/vault.py` |
+| `src/vault.rs` | PIN vault (Argon2id, three identical slots: unlock, duress and panic PINs; opens version 1 two-slot vaults) | `zkw/vault.py` |
 | `src/persist.rs` | Sealed inbox state (ChaCha20-Poly1305), profile key derivation | — |
 
 ## Beyond the Python reference

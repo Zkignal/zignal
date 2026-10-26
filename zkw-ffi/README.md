@@ -19,10 +19,12 @@ The app links the framework statically (Do Not Embed).
 ## Swift API (what the app calls)
 
 ```swift
-// Profiles: two secrets in one duress vault
+// Profiles: the real and decoy secrets in one three-slot vault. The duress PIN opens the
+// decoy; the panic PIN opens the decoy and silently wipes the real slot.
 let vault = try vaultCreate(realPin: real, realSecret: s1, duressPin: duress, decoySecret: s2,
-                            wipeRealOnDuress: false)
+                            panicPin: panic)
 let opened = try vaultUnlock(vault: vault, pin: entered)   // opened.secret == nil -> wrong PIN
+// Always store opened.vault: it differs from `vault` only after a silent wipe.
 let keys = try profileKeys(profileSecret: secret)          // identitySeed + stateKey
 
 // Inbox: create, save after every change, restore after an app restart
