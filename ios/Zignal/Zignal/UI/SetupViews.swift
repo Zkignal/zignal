@@ -75,25 +75,39 @@ struct PinSetupView: View {
                 }
             }
             Section {
+                PinRole(number: 1, name: "Unlock PIN", text: "opens your real profile.")
+                PinRole(number: 2, name: "Duress PIN", text: "opens a decoy profile if someone forces you.")
+                PinRole(number: 3, name: "Panic PIN", text: "erases your real profile, then opens the decoy.")
+            } header: {
+                Text("You'll set 3 different PINs")
+            }
+
+            Section {
                 SecureField("Unlock PIN", text: $realPin).pinInput($realPin)
                 SecureField("Repeat unlock PIN", text: $realRepeat).pinInput($realRepeat)
             } header: {
-                Text("Unlock PIN")
+                Text("1. Unlock PIN")
             } footer: {
-                hint(realProblem, otherwise: "At least \(PinPolicy.minLength) digits. If you forget it, restore from your recovery phrase; chat history can't be restored.")
+                hint(realProblem, otherwise: """
+                    Opens your real profile. At least \(PinPolicy.minLength) digits.
+                    Forgot it? Restore with your 24-word recovery phrase. Chats can't be restored.
+                    """)
             }
 
             Section {
                 SecureField("Duress PIN", text: $duressPin).pinInput($duressPin)
                 SecureField("Repeat duress PIN", text: $duressRepeat).pinInput($duressRepeat)
             } header: {
-                Text("Duress PIN")
+                Text("2. Duress PIN")
             } footer: {
                 hint(duressProblem, otherwise: """
-                    If someone forces you to unlock Zignal, enter this PIN instead. It opens a \
-                    separate decoy profile with its own wallet and never erases anything. Both \
-                    profiles are stored the same way, so the files don't show which one is real. \
-                    Use the decoy now and then, and keep a little ZEC in it, so it looks lived in.
+                    Use this if someone forces you to open Zignal.
+                    • Opens a decoy profile with its own wallet and chats.
+                    • Never deletes anything.
+                    • Both profiles are stored the same way, so a quick look at the phone won't \
+                    show which one is real.
+                    Tip: open the decoy now and then and keep a little ZEC in it, so it looks like \
+                    an account you really use.
                     """)
             }
 
@@ -102,14 +116,17 @@ struct PinSetupView: View {
                 SecureField("Repeat panic PIN", text: $panicRepeat).pinInput($panicRepeat)
                 Toggle("I understand this can't be undone", isOn: $panicUnderstood)
             } header: {
-                Text("Panic PIN")
+                Text("3. Panic PIN")
             } footer: {
                 hint(panicProblem, otherwise: """
-                    Last resort. This PIN silently erases your real profile from this phone \
-                    (its PIN, chats and wallet files), then opens the decoy as if nothing happened. \
-                    Your unlock PIN stops working. The real wallet's funds come back only with its \
-                    24-word recovery phrase, so keep that phrase off this phone. Chats can't be \
-                    recovered. Pick a PIN you won't type by mistake.
+                    Your last resort. It can't be undone.
+                    • Quietly erases your real profile from this phone: its chats, wallet data and \
+                    unlock PIN.
+                    • Then opens the decoy as if nothing happened.
+                    • Your real funds come back only with your 24-word recovery phrase. Keep it \
+                    written down, away from this phone.
+                    • Erased chats are gone for good.
+                    Pick a PIN you won't type by accident.
                     """)
             }
 
@@ -173,12 +190,32 @@ struct PinSetupView: View {
             && panicUnderstood
     }
 
+    /// The text under a PIN: the problem in red if there is one, otherwise the explanation.
+    /// One size above the usual footnote, so it's easier to read.
     @ViewBuilder
     private func hint(_ problem: String?, otherwise text: String) -> some View {
-        if let problem {
-            Text(problem).foregroundStyle(.red)
-        } else {
-            Text(text)
+        Group {
+            if let problem {
+                Text(problem).foregroundStyle(.red)
+            } else {
+                Text(text)
+            }
+        }
+        .font(.subheadline)
+    }
+}
+
+/// One line of the overview at the top of the Set PINs screen.
+private struct PinRole: View {
+    let number: Int
+    let name: String
+    let text: String
+
+    var body: some View {
+        Label {
+            Text("\(Text(name).bold()): \(text)")
+        } icon: {
+            Image(systemName: "\(number).circle.fill").foregroundStyle(.tint)
         }
     }
 }
