@@ -7,7 +7,7 @@ import Security
 /// is unlocked, never synced to iCloud Keychain, and never moved to a different device.
 enum Keychain {
     enum Item: String, CaseIterable {
-        /// The duress vault (both profile secrets, each sealed under its PIN).
+        /// The PIN vault (both profile secrets, sealed under the unlock, duress and panic PINs).
         case vault
         /// The wrong-PIN counter.
         case attempts

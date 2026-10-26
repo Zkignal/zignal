@@ -215,32 +215,49 @@ class SessionTests(unittest.TestCase):
 
 
 class VaultTests(unittest.TestCase):
-    def test_real_duress_wrong(self):
-        v = V.create("2580", b"REAL-SEED", "1111", b"DECOY-SEED", kp=FAST)
+    def test_three_pins_and_wrong(self):
+        v = V.create("2580", b"REAL-SEED", "1111", b"DECOY-SEED", "9753", kp=FAST)
+        self.assertEqual(len(v), V.VAULT_LEN)
         self.assertEqual(V.open_vault(v, "2580", FAST).secret, b"REAL-SEED")
         self.assertEqual(V.open_vault(v, "1111", FAST).secret, b"DECOY-SEED")
+        self.assertEqual(V.open_vault(v, "9753", FAST).secret, b"DECOY-SEED")
         self.assertIsNone(V.open_vault(v, "0000", FAST))
 
     def test_layout_reveals_nothing(self):
-        sizes = {len(V.create("1", b"a" * n, "2", b"b", kp=FAST)) for n in (1, 500, 900)}
-        self.assertEqual(len(sizes), 1)
+        sizes = {len(V.create("1", b"a" * n, "2", b"b", "3", kp=FAST)) for n in (1, 500, 900)}
+        self.assertEqual(sizes, {V.VAULT_LEN})
 
-    def test_silent_wipe(self):
-        v = V.create("2580", b"REAL", "1111", b"DECOY", wipe_real_on_duress=True, kp=FAST)
+    def test_duress_pin_never_wipes(self):
+        v = V.create("2580", b"REAL", "1111", b"DECOY", "9753", kp=FAST)
         o, v2 = V.unlock(v, "1111", FAST)
         self.assertEqual(o.secret, b"DECOY")
-        self.assertEqual(len(v2), len(v))
-        self.assertIsNone(V.open_vault(v2, "2580", FAST))
-        self.assertEqual(V.open_vault(v2, "1111", FAST).secret, b"DECOY")
+        self.assertEqual(v2, v)
 
-    def test_no_wipe_by_default(self):
-        v = V.create("2580", b"REAL", "1111", b"DECOY", kp=FAST)
-        _, v2 = V.unlock(v, "1111", FAST)
-        self.assertEqual(V.open_vault(v2, "2580", FAST).secret, b"REAL")
+    def test_panic_pin_wipes_only_the_real_profile(self):
+        for _ in range(6):  # the slot order is random
+            v = V.create("2580", b"REAL", "1111", b"DECOY", "9753", kp=FAST)
+            o, v2 = V.unlock(v, "9753", FAST)
+            self.assertEqual(o.secret, b"DECOY")
+            self.assertEqual(len(v2), len(v))
+            self.assertIsNone(V.open_vault(v2, "2580", FAST))
+            self.assertEqual(V.open_vault(v2, "1111", FAST).secret, b"DECOY")
+            self.assertEqual(V.open_vault(v2, "9753", FAST).secret, b"DECOY")
 
     def test_same_pins_rejected(self):
-        with self.assertRaises(P.CryptoError):
-            V.create("1", b"a", "1", b"b", kp=FAST)
+        for pins in (("1", "1", "2"), ("1", "2", "1"), ("1", "2", "2")):
+            with self.assertRaises(P.CryptoError):
+                V.create(pins[0], b"a", pins[1], b"b", pins[2], kp=FAST)
+
+    def test_version_1_vaults_still_open(self):
+        v = V.create_v1("2580", b"REAL", "1111", b"DECOY", wipe_real_on_duress=True, kp=FAST)
+        self.assertEqual(len(v), V.VAULT_V1_LEN)
+        self.assertEqual(V.open_vault(v, "2580", FAST).secret, b"REAL")
+        o, v2 = V.unlock(v, "1111", FAST)
+        self.assertEqual(o.secret, b"DECOY")
+        self.assertIsNone(V.open_vault(v2, "2580", FAST))
+        plain = V.create_v1("2580", b"REAL", "1111", b"DECOY", kp=FAST)
+        _, p2 = V.unlock(plain, "1111", FAST)
+        self.assertEqual(V.open_vault(p2, "2580", FAST).secret, b"REAL")
 
 
 class VectorTests(unittest.TestCase):

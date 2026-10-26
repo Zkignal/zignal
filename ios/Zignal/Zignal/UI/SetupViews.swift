@@ -17,7 +17,7 @@ struct OnboardingView: View {
                     Feature(icon: "key",
                             text: "Post-quantum handshake and forward secrecy on every message.")
                     Feature(icon: "theatermasks",
-                            text: "A duress PIN opens a separate decoy profile.")
+                            text: "A duress PIN opens a decoy profile. A panic PIN also erases the real one.")
                 }
                 .padding(.horizontal)
                 Spacer()
@@ -61,7 +61,9 @@ struct PinSetupView: View {
     @State private var realRepeat = ""
     @State private var duressPin = ""
     @State private var duressRepeat = ""
-    @State private var wipeOnDuress = false
+    @State private var panicPin = ""
+    @State private var panicRepeat = ""
+    @State private var panicUnderstood = false
 
     var body: some View {
         Form {
@@ -84,15 +86,30 @@ struct PinSetupView: View {
             Section {
                 SecureField("Duress PIN", text: $duressPin).pinInput($duressPin)
                 SecureField("Repeat duress PIN", text: $duressRepeat).pinInput($duressRepeat)
-                Toggle("Also erase real profile", isOn: $wipeOnDuress)
             } header: {
                 Text("Duress PIN")
             } footer: {
                 hint(duressProblem, otherwise: """
                     If someone forces you to unlock Zignal, enter this PIN instead. It opens a \
-                    separate decoy profile. Both profiles are stored the same way, so the files \
-                    don't show which one is real. Use the decoy now and then so it looks lived in. \
-                    With erase on, the duress PIN also silently destroys your real profile on this phone.
+                    separate decoy profile with its own wallet and never erases anything. Both \
+                    profiles are stored the same way, so the files don't show which one is real. \
+                    Use the decoy now and then, and keep a little ZEC in it, so it looks lived in.
+                    """)
+            }
+
+            Section {
+                SecureField("Panic PIN", text: $panicPin).pinInput($panicPin)
+                SecureField("Repeat panic PIN", text: $panicRepeat).pinInput($panicRepeat)
+                Toggle("I understand this can't be undone", isOn: $panicUnderstood)
+            } header: {
+                Text("Panic PIN")
+            } footer: {
+                hint(panicProblem, otherwise: """
+                    Last resort. This PIN silently erases your real profile from this phone \
+                    (its PIN, chats and wallet files), then opens the decoy as if nothing happened. \
+                    Your unlock PIN stops working. The real wallet's funds come back only with its \
+                    24-word recovery phrase, so keep that phrase off this phone. Chats can't be \
+                    recovered. Pick a PIN you won't type by mistake.
                     """)
             }
 
@@ -100,7 +117,7 @@ struct PinSetupView: View {
                 Button {
                     Task {
                         await model.createProfiles(realPin: realPin, duressPin: duressPin,
-                                                   wipeRealOnDuress: wipeOnDuress, restore: restore)
+                                                   panicPin: panicPin, restore: restore)
                     }
                 } label: {
                     HStack {
@@ -139,10 +156,21 @@ struct PinSetupView: View {
         return nil
     }
 
+    private var panicProblem: String? {
+        guard !panicPin.isEmpty else { return nil }
+        if let problem = PinPolicy.problem(panicPin) { return PinPolicy.message(problem) }
+        if panicPin == realPin { return "Must be different from your unlock PIN." }
+        if panicPin == duressPin { return "Must be different from your duress PIN." }
+        if !panicRepeat.isEmpty && panicRepeat != panicPin { return "PINs don't match." }
+        return nil
+    }
+
     private var isValid: Bool {
         PinPolicy.problem(realPin) == nil && realRepeat == realPin
             && PinPolicy.problem(duressPin) == nil && duressRepeat == duressPin
-            && duressPin != realPin
+            && PinPolicy.problem(panicPin) == nil && panicRepeat == panicPin
+            && Set([realPin, duressPin, panicPin]).count == 3
+            && panicUnderstood
     }
 
     @ViewBuilder

@@ -7,7 +7,7 @@ prove the design works and pin down exact bytes, so other implementations (the R
 
 ## Run
 ```
-python3 -m unittest -v          # 28 tests
+python3 -m unittest -v          # 29 tests
 python3 -m vectors.generate     # regenerate vectors (only after a deliberate protocol change)
 ```
 Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
@@ -20,7 +20,7 @@ Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
 | `zkw/envelope.py` | Fixed 512-byte memo format, chunking, reassembly |
 | `zkw/ratchet.py` | Double Ratchet with header encryption; transactional decrypt; persistence |
 | `zkw/session.py` | Hybrid PQXDH handshake, sessions, cold HELLO/BUNDLE flow, inbox router, replay protection |
-| `zkw/vault.py` | Duress PIN vault (Argon2id, two identical slots, optional silent wipe) |
+| `zkw/vault.py` | PIN vault (Argon2id, three identical slots: unlock, duress and panic PINs; opens version 1 two-slot vaults) |
 | `tests/test_protocol.py` | End-to-end and unit tests |
 | `vectors/` | Deterministic vectors for the ports |
 
@@ -34,12 +34,12 @@ Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
 - No sender identity key or address appears in clear in any memo
 - Receipts and reactions are indistinguishable from text messages on the wire
 - Identity-key substitution in a prekey bundle is caught
-- Duress vault: real PIN, duress PIN, wrong PIN, identical file size, silent wipe, no wipe by default
+- PIN vault: unlock, duress, panic and wrong PINs; identical file size; the duress PIN never wipes; the panic PIN wipes only the real profile; version 1 vaults still open
 
 ## Measured sizes
 - Single-memo text: up to 402 bytes (512 minus 25 envelope, 68 encrypted header, 16 tag, 1 kind byte)
 - Handshake (INIT plus first message): 4 memos in one transaction
-- Duress vault file: 2,124 bytes. Production PIN derivation: about 0.1 s to unlock on this machine (Argon2id, 64 MiB)
+- PIN vault file: 3,176 bytes (version 1: 2,124). One Argon2id run per unlock attempt: about 0.1 s on this machine (64 MiB)
 
 ## Design decisions (v0.2, plus the v0.3 memo marker)
 1. **AEAD fixed:** ChaCha20-Poly1305.
@@ -49,7 +49,7 @@ Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.
 5. **Initiator identity encrypted:** INIT hides Alice's identity keys and address under a key from DH(EK, SPK) plus the KEM secret. Someone holding only Bob's viewing key can't see who is contacting him.
 6. **All post-handshake traffic is type MSG:** the real kind (text, receipt, reaction, close) is inside the encryption.
 7. **conv_tag epoch:** one day; receivers accept yesterday, today and tomorrow.
-8. **Duress wipe:** the app can't know which slot is real, so the wipe flag is stored encrypted inside the decoy slot.
+8. **Duress wipe:** the app can't know which slot is real, so the wipe instruction is stored encrypted inside the slot that triggers it. Since vault version 2 that is a separate panic PIN, which records the real slot's index; the duress PIN itself never wipes.
 9. **v0.3: ZIP-302 marker.** Every memo starts with `0xFF`, which ZIP-302 defines as arbitrary binary data. Wallets read any first byte of `0xF4` or below as UTF-8 text, so v0.2 memos (starting "ZW") were rejected by the Zcash SDK. The header is now 25 bytes and the envelope version is 2.
 
 ## Known limits

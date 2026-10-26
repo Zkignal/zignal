@@ -1518,16 +1518,17 @@ public func recoveryPhrase(profileSecret: Data)throws  -> String {
 })
 }
 /**
- * Create the duress vault. Store the returned bytes; never store the PINs.
+ * Create the PIN vault. Store the returned bytes; never store the PINs.
+ * The panic PIN opens the decoy profile and silently wipes the real one.
  */
-public func vaultCreate(realPin: String, realSecret: Data, duressPin: String, decoySecret: Data, wipeRealOnDuress: Bool)throws  -> Data {
+public func vaultCreate(realPin: String, realSecret: Data, duressPin: String, decoySecret: Data, panicPin: String)throws  -> Data {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeZkwError.lift) {
     uniffi_zkw_ffi_fn_func_vault_create(
         FfiConverterString.lower(realPin),
         FfiConverterData.lower(realSecret),
         FfiConverterString.lower(duressPin),
         FfiConverterData.lower(decoySecret),
-        FfiConverterBool.lower(wipeRealOnDuress),$0
+        FfiConverterString.lower(panicPin),$0
     )
 })
 }
@@ -1580,7 +1581,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_zkw_ffi_checksum_func_recovery_phrase() != 24652) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_zkw_ffi_checksum_func_vault_create() != 40390) {
+    if (uniffi_zkw_ffi_checksum_func_vault_create() != 37669) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zkw_ffi_checksum_func_vault_unlock() != 62896) {

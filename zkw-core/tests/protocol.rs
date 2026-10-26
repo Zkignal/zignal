@@ -305,8 +305,9 @@ fn sender_not_in_clear() {
 }
 
 #[test]
-fn vault_real_duress_wrong() {
-    let v = vault::create("2580", b"REAL-SEED", "1111", b"DECOY-SEED", false, FAST).unwrap();
+fn vault_three_pins_and_wrong() {
+    let v = vault::create("2580", b"REAL-SEED", "1111", b"DECOY-SEED", "9753", FAST).unwrap();
+    assert_eq!(v.len(), vault::VAULT_LEN);
     assert_eq!(
         vault::open_vault(&v, "2580", FAST).unwrap().unwrap().secret,
         b"REAL-SEED"
@@ -315,24 +316,62 @@ fn vault_real_duress_wrong() {
         vault::open_vault(&v, "1111", FAST).unwrap().unwrap().secret,
         b"DECOY-SEED"
     );
+    assert_eq!(
+        vault::open_vault(&v, "9753", FAST).unwrap().unwrap().secret,
+        b"DECOY-SEED"
+    );
     assert!(vault::open_vault(&v, "0000", FAST).unwrap().is_none());
-    assert!(vault::create("1", b"a", "1", b"b", false, FAST).is_err());
+    for (a, b, c) in [("1", "1", "2"), ("1", "2", "1"), ("1", "2", "2")] {
+        assert!(vault::create(a, b"a", b, b"b", c, FAST).is_err());
+    }
 }
 
 #[test]
-fn vault_layout_and_wipe() {
+fn vault_layout_and_panic_wipe() {
     for n in [1usize, 500, 900] {
         assert_eq!(
-            vault::create("1", &vec![7u8; n], "2", b"b", false, FAST).unwrap().len(),
+            vault::create("1", &vec![7u8; n], "2", b"b", "3", FAST).unwrap().len(),
             vault::VAULT_LEN
         );
     }
-    let v = vault::create("2580", b"REAL", "1111", b"DECOY", true, FAST).unwrap();
+    // Several rounds, because the slot order is random.
+    for _ in 0..6 {
+        let v = vault::create("2580", b"REAL", "1111", b"DECOY", "9753", FAST).unwrap();
+        // The duress PIN never wipes anything.
+        let (o, same) = vault::unlock(&v, "1111", FAST).unwrap();
+        assert_eq!(o.unwrap().secret, b"DECOY");
+        assert_eq!(same, v);
+        // The panic PIN opens the decoy and wipes only the real profile.
+        let (o, wiped) = vault::unlock(&v, "9753", FAST).unwrap();
+        assert_eq!(o.unwrap().secret, b"DECOY");
+        assert_eq!(wiped.len(), v.len());
+        assert!(vault::open_vault(&wiped, "2580", FAST).unwrap().is_none());
+        assert_eq!(
+            vault::open_vault(&wiped, "1111", FAST).unwrap().unwrap().secret,
+            b"DECOY"
+        );
+        assert_eq!(
+            vault::open_vault(&wiped, "9753", FAST).unwrap().unwrap().secret,
+            b"DECOY"
+        );
+    }
+}
+
+#[test]
+fn vault_v1_still_opens_and_wipes() {
+    let v = vault::create_v1("2580", b"REAL", "1111", b"DECOY", true, FAST).unwrap();
+    assert_eq!(v.len(), vault::VAULT_V1_LEN);
+    assert_eq!(
+        vault::open_vault(&v, "2580", FAST).unwrap().unwrap().secret,
+        b"REAL"
+    );
     let (o, v2) = vault::unlock(&v, "1111", FAST).unwrap();
     assert_eq!(o.unwrap().secret, b"DECOY");
-    assert_eq!(v2.len(), v.len());
     assert!(vault::open_vault(&v2, "2580", FAST).unwrap().is_none());
-    let plain = vault::create("2580", b"REAL", "1111", b"DECOY", false, FAST).unwrap();
+    let plain = vault::create_v1("2580", b"REAL", "1111", b"DECOY", false, FAST).unwrap();
     let (_, p2) = vault::unlock(&plain, "1111", FAST).unwrap();
-    assert_eq!(vault::open_vault(&p2, "2580", FAST).unwrap().unwrap().secret, b"REAL");
+    assert_eq!(
+        vault::open_vault(&p2, "2580", FAST).unwrap().unwrap().secret,
+        b"REAL"
+    );
 }

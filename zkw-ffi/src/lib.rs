@@ -246,21 +246,22 @@ impl ZkwInbox {
     }
 }
 
-/// Create the duress vault. Store the returned bytes; never store the PINs.
+/// Create the PIN vault. Store the returned bytes; never store the PINs.
+/// The panic PIN opens the decoy profile and silently wipes the real one.
 #[uniffi::export]
 pub fn vault_create(
     real_pin: String,
     real_secret: Vec<u8>,
     duress_pin: String,
     decoy_secret: Vec<u8>,
-    wipe_real_on_duress: bool,
+    panic_pin: String,
 ) -> Result<Vec<u8>, ZkwError> {
     Ok(vault::create(
         &real_pin,
         &real_secret,
         &duress_pin,
         &decoy_secret,
-        wipe_real_on_duress,
+        &panic_pin,
         KdfParams::default(),
     )?)
 }
@@ -536,15 +537,24 @@ mod tests {
 
     #[test]
     fn swift_api_vault() {
-        let v = vault_create("2580".into(), b"REAL".to_vec(), "1111".into(), b"DECOY".to_vec(), false).unwrap();
+        let v = vault_create(
+            "2580".into(),
+            b"REAL".to_vec(),
+            "1111".into(),
+            b"DECOY".to_vec(),
+            "9753".into(),
+        )
+        .unwrap();
         assert_eq!(
             vault_unlock(v.clone(), "2580".into()).unwrap().secret,
             Some(b"REAL".to_vec())
         );
-        assert_eq!(
-            vault_unlock(v.clone(), "1111".into()).unwrap().secret,
-            Some(b"DECOY".to_vec())
-        );
+        let duress = vault_unlock(v.clone(), "1111".into()).unwrap();
+        assert_eq!(duress.secret, Some(b"DECOY".to_vec()));
+        assert_eq!(duress.vault, v);
+        let panic = vault_unlock(v.clone(), "9753".into()).unwrap();
+        assert_eq!(panic.secret, Some(b"DECOY".to_vec()));
+        assert_eq!(vault_unlock(panic.vault, "2580".into()).unwrap().secret, None);
         assert_eq!(vault_unlock(v, "0000".into()).unwrap().secret, None);
     }
 }

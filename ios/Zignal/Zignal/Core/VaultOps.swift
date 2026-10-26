@@ -16,16 +16,18 @@ enum VaultOps {
         let vault: Data
     }
 
-    /// Creates two independent profiles. Each secret is 32 bytes of entropy, which is exactly
-    /// one 24-word recovery phrase. `restoredSecret` (from a recovery phrase) becomes the real
-    /// profile; otherwise both secrets are fresh. The decoy is always fresh.
-    static func create(realPin: String, duressPin: String, wipeRealOnDuress: Bool,
+    /// Creates two independent profiles behind three PINs: the unlock PIN opens the real
+    /// profile, the duress PIN opens the decoy, and the panic PIN opens the decoy after silently
+    /// wiping the real profile. Each secret is 32 bytes of entropy, which is exactly one 24-word
+    /// recovery phrase. `restoredSecret` (from a recovery phrase) becomes the real profile;
+    /// otherwise both secrets are fresh. The decoy is always fresh.
+    static func create(realPin: String, duressPin: String, panicPin: String,
                        restoredSecret: Data? = nil) throws -> Created {
         if let restoredSecret, restoredSecret.count != 32 { throw ZignalError.invalidRecoveryPhrase }
         let real = try restoredSecret ?? secureRandom(32)
         let decoy = try secureRandom(32)
         let vault = try vaultCreate(realPin: realPin, realSecret: real, duressPin: duressPin,
-                                    decoySecret: decoy, wipeRealOnDuress: wipeRealOnDuress)
+                                    decoySecret: decoy, panicPin: panicPin)
         return Created(vault: vault, realSecret: real, decoySecret: decoy)
     }
 
@@ -35,7 +37,7 @@ enum VaultOps {
     }
 }
 
-/// Rules for unlock and duress PINs.
+/// Rules for the unlock, duress and panic PINs.
 enum PinPolicy {
     static let minLength = 6
     static let maxLength = 16

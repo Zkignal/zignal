@@ -160,39 +160,51 @@ struct RecoveryPhraseTests {
         }
     }
 
-    /// Runs Argon2id (64 MiB) twice.
+    /// Runs Argon2id (64 MiB) four times.
     @Test func vaultKeepsARestoredSecret() throws {
         let secret = try secureRandom(32)
         let created = try VaultOps.create(realPin: "583914", duressPin: "260471",
-                                          wipeRealOnDuress: false, restoredSecret: secret)
+                                          panicPin: "731946", restoredSecret: secret)
         #expect(created.realSecret == secret)
         #expect(created.decoySecret != secret)
         #expect(try VaultOps.unlock(vault: created.vault, pin: "583914").secret == secret)
         #expect(throws: ZignalError.self) {
             try VaultOps.create(realPin: "583914", duressPin: "260471",
-                                wipeRealOnDuress: false, restoredSecret: Data(count: 16))
+                                panicPin: "731946", restoredSecret: Data(count: 16))
         }
     }
 }
 
 /// Runs Argon2id (64 MiB) several times, so these take a few seconds.
 struct VaultTests {
-    @Test func realDuressAndWrongPin() throws {
-        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", wipeRealOnDuress: false)
+    @Test func unlockDuressPanicAndWrongPin() throws {
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", panicPin: "731946")
         #expect(try VaultOps.unlock(vault: created.vault, pin: "583914").secret == created.realSecret)
         #expect(try VaultOps.unlock(vault: created.vault, pin: "260471").secret == created.decoySecret)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "731946").secret == created.decoySecret)
         #expect(try VaultOps.unlock(vault: created.vault, pin: "000000").secret == nil)
         #expect(created.realSecret != created.decoySecret)
+        #expect(throws: (any Error).self) {
+            try VaultOps.create(realPin: "583914", duressPin: "260471", panicPin: "583914")
+        }
     }
 
-    @Test func duressPinCanSilentlyEraseRealProfile() throws {
-        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", wipeRealOnDuress: true)
+    @Test func duressPinNeverErasesAnything() throws {
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", panicPin: "731946")
         let duress = try VaultOps.unlock(vault: created.vault, pin: "260471")
         #expect(duress.secret == created.decoySecret)
-        #expect(duress.vault != created.vault)
-        #expect(duress.vault.count == created.vault.count)
-        #expect(try VaultOps.unlock(vault: duress.vault, pin: "583914").secret == nil)
-        #expect(try VaultOps.unlock(vault: duress.vault, pin: "260471").secret == created.decoySecret)
+        #expect(duress.vault == created.vault)
+    }
+
+    @Test func panicPinSilentlyErasesRealProfile() throws {
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", panicPin: "731946")
+        let panic = try VaultOps.unlock(vault: created.vault, pin: "731946")
+        #expect(panic.secret == created.decoySecret)
+        #expect(panic.vault != created.vault)
+        #expect(panic.vault.count == created.vault.count)
+        #expect(try VaultOps.unlock(vault: panic.vault, pin: "583914").secret == nil)
+        #expect(try VaultOps.unlock(vault: panic.vault, pin: "260471").secret == created.decoySecret)
+        #expect(try VaultOps.unlock(vault: panic.vault, pin: "731946").secret == created.decoySecret)
     }
 }
 
@@ -348,7 +360,7 @@ struct UnlockTimingTests {
 
         var start = clock.now
         let created = try VaultOps.create(realPin: "58391402", duressPin: "26047118",
-                                          wipeRealOnDuress: false)
+                                          panicPin: "73194652")
         let createTime = start.duration(to: clock.now)
 
         start = clock.now
@@ -374,7 +386,7 @@ struct UnlockTimingTests {
         let openTime = start.duration(to: clock.now)
         #expect(session.messages.count == 22)
 
-        print("TIMING set up both PINs (Argon2id x2): \(ms(createTime)) ms")
+        print("TIMING set up all three PINs (Argon2id x3): \(ms(createTime)) ms")
         print("TIMING check one PIN (Argon2id x1): \(ms(unlockTime)) ms")
         print("TIMING open profile (decrypt, restore, re-seal all files): \(ms(openTime)) ms")
         #expect(unlockTime < .seconds(3), "Checking one PIN took \(ms(unlockTime)) ms")

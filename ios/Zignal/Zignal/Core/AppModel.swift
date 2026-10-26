@@ -56,7 +56,7 @@ final class AppModel {
 
     /// Creates the real and decoy profiles. With `restore`, the real profile comes from a
     /// recovery phrase; chat history is never part of a phrase, so it starts empty.
-    func createProfiles(realPin: String, duressPin: String, wipeRealOnDuress: Bool,
+    func createProfiles(realPin: String, duressPin: String, panicPin: String,
                         restore: RestoredProfile? = nil) async {
         guard !busy else { return }
         busy = true
@@ -69,7 +69,7 @@ final class AppModel {
             // Argon2id (once per PIN) and writing both profiles run off the main thread.
             let (realKeys, seed) = try await Task.detached(priority: .userInitiated) {
                 let created = try VaultOps.create(realPin: realPin, duressPin: duressPin,
-                                                  wipeRealOnDuress: wipeRealOnDuress,
+                                                  panicPin: panicPin,
                                                   restoredSecret: restoredSecret)
                 let realKeys = try ProfileKeyset(secret: created.realSecret)
                 let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
@@ -188,7 +188,7 @@ final class AppModel {
 
     /// Shows the open profile's recovery phrase after checking its PIN again. Attempts count
     /// toward the same wrong-PIN limit as unlocking. A PIN for the other profile is treated as
-    /// wrong, and the vault returned by the check is never saved, so entering the duress PIN
+    /// wrong, and the vault returned by the check is never saved, so entering the panic PIN
     /// here can't trigger the silent wipe.
     func revealRecoveryPhrase(pin: String, for session: ProfileSession) async -> PhraseReveal {
         do {
