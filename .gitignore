@@ -13,3 +13,31 @@ ios/Zignal/Zignal/SaplingParams/
 
 # Private working files
 Zignal-block4-*
+Zignal-*.diff
+Zignal-prep/
+Zignal101326/
+*.textClipping
+*.xlsx
+
+# Python bytecode
+__pycache__/
+
+# Swift Package Manager and Xcode local state
+.swiftpm/
+.build/
+
+# Signing material and build outputs (never commit)
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+*.certSigningRequest
+*.ipa
+*.xcarchive
+*.dSYM/
+*.xcresult
+.env
+
+# Leftovers from patching
+*.orig
+*.rej

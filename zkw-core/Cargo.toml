@@ -3,8 +3,8 @@ name = "zkw-core"
 version = "0.2.0"
 edition = "2021"
 publish = false
-license = "LicenseRef-Proprietary"
-description = "Private messaging core for Zcash shielded memos: 512-byte envelope, hybrid PQXDH handshake, header-encrypted Double Ratchet, duress vault."
+license = "MIT OR Apache-2.0"
+description = "Private messaging core for Zcash shielded memos: 512-byte envelope, hybrid PQXDH handshake, header-encrypted Double Ratchet, PIN vault."
 
 [lib]
 # staticlib = the .a file linked into the iOS app later (via UniFFI / XCFramework)
