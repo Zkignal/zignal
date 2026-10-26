@@ -1,4 +1,6 @@
 // swift-tools-version:5.6
+// Vendored by Zignal from zcash-swift-wallet-sdk 3.0.0 (MIT), with the stop fix described in
+// ZIGNAL-PATCHES.md. Same prebuilt libzcashlc binary and checksum as the upstream release.
 import PackageDescription
 import Foundation
 
@@ -48,52 +50,8 @@ targets.append(contentsOf: [
         resources: [
             .copy("Resources/checkpoints")
         ]
-    ),
-    .target(
-        name: "TestUtils",
-        dependencies: ["ZcashLightClientKit"],
-        path: "Tests/TestUtils",
-        exclude: [
-            "proto/darkside.proto",
-            "Sourcery/AutoMockable.stencil",
-            "Sourcery/generateMocks.sh"
-        ],
-        resources: [
-            .copy("Resources/test_data.db"),
-            .copy("Resources/cache.db"),
-            .copy("Resources/darkside_caches.db"),
-            .copy("Resources/darkside_data.db"),
-            .copy("Resources/sandblasted_mainnet_block.json"),
-            .copy("Resources/txBase64String.txt"),
-            .copy("Resources/txFromAndroidSDK.txt"),
-            .copy("Resources/integerOverflowJSON.json"),
-            .copy("Resources/sapling-spend.params"),
-            .copy("Resources/sapling-output.params")
-        ]
-    ),
-    .testTarget(
-        name: "OfflineTests",
-        dependencies: ["ZcashLightClientKit", "TestUtils"]
-    ),
-    .testTarget(
-        name: "NetworkTests",
-        dependencies: ["ZcashLightClientKit", "TestUtils"]
-    ),
-    .testTarget(
-        name: "DarksideTests",
-        dependencies: ["ZcashLightClientKit", "TestUtils"]
-    ),
-    .testTarget(
-        name: "AliasDarksideTests",
-        dependencies: ["ZcashLightClientKit", "TestUtils"],
-        exclude: [
-            "scripts/"
-        ]
-    ),
-    .testTarget(
-        name: "PerformanceTests",
-        dependencies: ["ZcashLightClientKit", "TestUtils"]
     )
+    // Zignal: upstream test targets removed; the tests are not vendored.
 ])
 
 let package = Package(

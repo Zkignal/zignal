@@ -42,6 +42,10 @@ actor CompactBlockProcessor {
     private var retryAttempts: Int = 0
     private var serviceFailureRetryAttempts: Int = 0
     private var backoffTimer: Timer?
+    /// Zignal patch: set by `stop()`, cleared only by an explicit `start(retry:)`. While set,
+    /// nothing inside the processor (its poll timer, a retry, an after-sync hook) can start a
+    /// new sync, and no new poll timer is armed.
+    private var stopRequested = false
     private var consecutiveChainValidationErrors: Int = 0
 
     private var compactBlockProgress: CompactBlockProgress = .zero
@@ -259,7 +263,15 @@ actor CompactBlockProcessor {
 // MARK: - "Public" API
 
 extension CompactBlockProcessor {
+    /// Explicit start requested by the synchronizer. Clears a previous `stop()`.
     func start(retry: Bool = false) async {
+        stopRequested = false
+        await startSync(retry: retry)
+    }
+
+    /// Zignal patch: starts a sync unless `stop()` was called. Used by `start(retry:)` and by
+    /// the poll timer, which must never undo a stop.
+    private func startSync(retry: Bool) async {
         if retry {
             self.retryAttempts = 0
             self.serviceFailureRetryAttempts = 0
@@ -278,23 +290,51 @@ extension CompactBlockProcessor {
             return
         }
 
+        // Checked after the last suspension point above, so a `stop()` that ran meanwhile wins.
+        guard !stopRequested else { return }
+
         syncTask = Task(priority: .userInitiated) {
             await run()
         }
 
-        mempoolDetectionTask = Task {
-            await watchMempool()
+        // Zignal patch: one mempool watcher per processor. Upstream started a new watcher on every
+        // sync start (every poll) without cancelling the previous one, so watchers piled up, each
+        // with its own server stream and database writes, and stop() only cancelled the newest.
+        if mempoolDetectionTask == nil {
+            mempoolDetectionTask = Task {
+                await watchMempool()
+            }
         }
     }
 
     func stop() async {
+        stopRequested = true
         syncTask?.cancel()
         mempoolDetectionTask?.cancel()
+        mempoolDetectionTask = nil // Zignal patch: a later explicit start gets a fresh watcher
         self.backoffTimer?.invalidate()
         self.backoffTimer = nil
         await stopAllActions()
         retryAttempts = 0
         serviceFailureRetryAttempts = 0
+    }
+
+    /// Zignal patch: stops, then returns only once the sync loop and the mempool watcher have
+    /// exited, so the caller knows the processor no longer touches its database or the network.
+    func stopAndWait() async {
+        let running = syncTask
+        let mempool = mempoolDetectionTask
+        await stop()
+        if let running {
+            _ = try? await running.value
+        }
+        // The sync loop has exited, so nothing in this processor is using the connection. Closing
+        // it ends the open mempool stream now instead of at the next mempool transaction. The
+        // service reconnects on its next call if the processor is started again.
+        await service.closeConnections()
+        if let mempool {
+            _ = try? await mempool.value
+        }
     }
 
     func latestHeight(mode: ServiceMode) async throws -> BlockHeight {
@@ -379,7 +419,7 @@ private extension CompactBlockProcessor {
 
 extension CompactBlockProcessor {
     func watchMempool() async {
-        while !Task.isCancelled {
+        while !Task.isCancelled && !stopRequested { // Zignal patch: also ends on stop()
             do {
                 try await consumeMempoolStream()
 
@@ -396,6 +436,8 @@ extension CompactBlockProcessor {
 
         do {
             for try await rawTransaction in stream {
+                // Zignal patch: a stopped watcher must not touch the wallet database again.
+                if Task.isCancelled || stopRequested { break }
                 let mempoolTransactions = try await resolveMempools(rawTransaction: rawTransaction)
 
                 if !mempoolTransactions.isEmpty {
@@ -666,7 +708,24 @@ extension CompactBlockProcessor {
                     serviceError = !(error is ZcashError)
                 }
 
-                if serviceError && self.serviceFailureRetryAttempts < ZcashSDK.serviceFailureRetries {
+                if Task.isCancelled || stopRequested {
+                    // Zignal patch: a stop is checked first. Cancelling a running action usually
+                    // surfaces as a transport error, and the retry branch below would otherwise
+                    // restart the sync (and re-arm the poll timer) after `stop()`.
+                    logger.info("Processing cancelled.")
+                    do {
+                        if try await syncTaskWasCancelled(), !stopRequested {
+                            // Start sync all over again
+                            await resetContext()
+                        } else {
+                            // end the sync loop
+                            break
+                        }
+                    } catch {
+                        await failure(error)
+                        break
+                    }
+                } else if serviceError && self.serviceFailureRetryAttempts < ZcashSDK.serviceFailureRetries {
                     // This may be false positive communication error that is usually resolved by retry.
                     // We will try to reset the sync and continue but this will we done at most `ZcashSDK.serviceFailureRetries` times.
                     logger.error("ServiceError: \(error), retry is available, starting the sync all over again.")
@@ -678,20 +737,6 @@ extension CompactBlockProcessor {
 
                     // Start sync all over again
                     await resetContext()
-                } else if Task.isCancelled {
-                    logger.info("Processing cancelled.")
-                    do {
-                        if try await syncTaskWasCancelled() {
-                            // Start sync all over again
-                            await resetContext()
-                        } else {
-                            // end the sync loop
-                            break
-                        }
-                    } catch {
-                        await failure(error)
-                        break
-                    }
                 } else {
                     await handleSyncFailure(action: action, error: error)
                     break
@@ -844,6 +889,8 @@ extension CompactBlockProcessor {
 
 extension CompactBlockProcessor {
     private func setTimer() async {
+        // Zignal patch: never arm the poll timer after `stop()`.
+        guard !stopRequested, !Task.isCancelled else { return }
         let interval = config.blockPollInterval
         self.backoffTimer?.invalidate()
         let timer = Timer(
@@ -852,6 +899,7 @@ extension CompactBlockProcessor {
             block: { [weak self] _ in
                 Task { [weak self] in
                     guard let self else { return }
+                    guard !(await self.stopRequested) else { return }
                     if await self.isIdle() {
                         if await self.canStartSync() {
                             await self.logger.debug(
@@ -861,7 +909,7 @@ extension CompactBlockProcessor {
                                 attempts: \(await self.retryAttempts)
                                 """
                             )
-                            await self.start()
+                            await self.startSync(retry: false)
                         } else if await self.hasRetryAttempt() {
                             await self.failure(ZcashError.compactBlockProcessorMaxAttemptsReached(self.config.retries))
                         }

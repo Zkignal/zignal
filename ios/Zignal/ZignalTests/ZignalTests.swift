@@ -652,6 +652,55 @@ struct WalletWipeTests {
         #expect(left == ["c_\(keep)_data.db", "c_\(keep)_data.db-wal", "c_\(keep)_fs_cache",
                          "c_\(keep)_sapling-spend.params"])
     }
+
+    /// The SDK keeps one preference per wallet; after a silent wipe only the open profile's
+    /// remain, and unrelated preferences are untouched.
+    @Test func wipeLeavesOnlyTheOpenProfilesSDKSettings() throws {
+        let suite = "zignal-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let keep = "aaaaaaaaaaaaaaaa", wiped = "bbbbbbbbbbbbbbbb"
+        defaults.set("1.0", forKey: "ud_fixWitnessesLastVersionCall_c_\(keep)")
+        defaults.set("1.0", forKey: "ud_fixWitnessesLastVersionCall_c_\(wiped)")
+        defaults.set(1, forKey: "c_\(wiped)_someFutureSetting")
+        defaults.set(true, forKey: "installed")
+        defaults.set("x", forKey: "abc_c_short")
+
+        WalletFiles.removeSDKDefaults(except: keep, defaults: defaults)
+
+        #expect(defaults.string(forKey: "ud_fixWitnessesLastVersionCall_c_\(keep)") == "1.0")
+        #expect(defaults.object(forKey: "ud_fixWitnessesLastVersionCall_c_\(wiped)") == nil)
+        #expect(defaults.object(forKey: "c_\(wiped)_someFutureSetting") == nil)
+        #expect(defaults.bool(forKey: "installed"))
+        #expect(defaults.string(forKey: "abc_c_short") == "x")
+    }
+}
+
+/// A wallet stopped on lock may still be finishing a step; the wipe waits for it.
+@MainActor
+struct WalletShutdownTests {
+    final class Flag { var isSet = false }
+
+    @Test func waitsForStoppedWalletsToFinish() async {
+        let finished = Flag()
+        WalletShutdown.begin {
+            try? await Task.sleep(for: .milliseconds(100))
+            finished.isSet = true
+        }
+        #expect(WalletShutdown.isBusy)
+        let settled = await WalletShutdown.waitForAll(timeout: .seconds(5))
+        #expect(settled)
+        #expect(finished.isSet)
+        #expect(!WalletShutdown.isBusy)
+    }
+
+    @Test func givesUpAfterTheTimeout() async {
+        WalletShutdown.begin { _ = try? await Task.sleep(for: .milliseconds(500)) }
+        let settled = await WalletShutdown.waitForAll(timeout: .milliseconds(50))
+        #expect(!settled)
+        await WalletShutdown.waitForAll(timeout: .seconds(5))
+        #expect(!WalletShutdown.isBusy)
+    }
 }
 
 @MainActor

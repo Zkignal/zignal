@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		06E7F1D93076B5BD0027752B /* ZcashLightClientKit in Frameworks */ = {isa = PBXBuildFile; productRef = 06E7F1D83076B5BD0027752B /* ZcashLightClientKit */; };
+		06473397308F06A400B06774 /* ZcashLightClientKit in Frameworks */ = {isa = PBXBuildFile; productRef = 06473396308F06A400B06774 /* ZcashLightClientKit */; };
 		A1C0FFEE0000000000000002 /* ZkwFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000001 /* ZkwFFI.xcframework */; };
 /* End PBXBuildFile section */
 
@@ -57,8 +57,8 @@
 		06E7F1AC3076B3970027752B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				06E7F1D93076B5BD0027752B /* ZcashLightClientKit in Frameworks */,
 				A1C0FFEE0000000000000002 /* ZkwFFI.xcframework in Frameworks */,
+				06473397308F06A400B06774 /* ZcashLightClientKit in Frameworks */,
 			);
 		};
 		06E7F1B93076B3980027752B /* Frameworks */ = {
@@ -113,7 +113,7 @@
 			);
 			name = Zignal;
 			packageProductDependencies = (
-				06E7F1D83076B5BD0027752B /* ZcashLightClientKit */,
+				06473396308F06A400B06774 /* ZcashLightClientKit */,
 			);
 			productName = Zignal;
 			productReference = 06E7F1AF3076B3970027752B /* Zignal.app */;
@@ -194,7 +194,7 @@
 			mainGroup = 06E7F1A63076B3970027752B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				06E7F1D73076B5BD0027752B /* XCRemoteSwiftPackageReference "zcash-swift-wallet-sdk" */,
+				06473395308F06A400B06774 /* XCLocalSwiftPackageReference "../../vendor/zcash-swift-wallet-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 06E7F1B03076B3970027752B /* Products */;
@@ -566,21 +566,16 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		06E7F1D73076B5BD0027752B /* XCRemoteSwiftPackageReference "zcash-swift-wallet-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/zcash/zcash-swift-wallet-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.0.0;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		06473395308F06A400B06774 /* XCLocalSwiftPackageReference "../../vendor/zcash-swift-wallet-sdk" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../vendor/zcash-swift-wallet-sdk";
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		06E7F1D83076B5BD0027752B /* ZcashLightClientKit */ = {
+		06473396308F06A400B06774 /* ZcashLightClientKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 06E7F1D73076B5BD0027752B /* XCRemoteSwiftPackageReference "zcash-swift-wallet-sdk" */;
 			productName = ZcashLightClientKit;
 		};
 /* End XCSwiftPackageProductDependency section */

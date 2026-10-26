@@ -109,16 +109,22 @@ final class WalletEngine {
             files.protectContents()
             observe(sync)
             try await sync.start(retry: true)
+            // Locked while the SDK was starting: stop() already ran, possibly before the sync
+            // began, so stop this wallet again now that it has started.
+            if synchronizer !== sync { WalletShutdown.begin { await sync.stopAndWait() } }
         } catch {
             guard synchronizer != nil else { return }
             phase = .failed(AppModel.describe(error))
         }
     }
 
-    /// Stops syncing and drops the wallet. Called on lock.
+    /// Stops syncing and drops the wallet. Called on lock. The SDK finishes the step it's on in
+    /// the background; `WalletShutdown.waitForAll()` waits for that.
     func stop() {
         subscriptions.removeAll()
-        synchronizer?.stop()
+        if let sync = synchronizer {
+            WalletShutdown.begin { await sync.stopAndWait() }
+        }
         synchronizer = nil
         account = nil
         phase = .stopped
@@ -344,6 +350,19 @@ struct WalletFiles {
         }
     }
 
+    /// The Zcash SDK also keeps a setting per wallet in the app's preferences, named after the
+    /// wallet's file prefix (for example "ud_fixWitnessesLastVersionCall_c_<alias>"). Removes
+    /// every such setting except the kept wallet's. Called after a silent wipe, with
+    /// `removeWallets(except:)`.
+    static func removeSDKDefaults(except keepAlias: String, defaults: UserDefaults = .standard) {
+        let keep = "c_\(keepAlias)"
+        for key in defaults.dictionaryRepresentation().keys
+        where key.range(of: #"(^|_)c_[0-9a-f]{16}($|_)"#, options: .regularExpression) != nil
+            && !key.contains(keep) {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Deletes every wallet file except those of the profile with `keepAlias`. Called after a
     /// silent wipe: the wiped profile's wallet database (addresses, transactions, memos) would
     /// otherwise stay on the phone. Its alias can't be known any more, but everything that isn't
@@ -369,5 +388,41 @@ struct WalletFiles {
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete],
                                                    ofItemAtPath: url.path)
         }
+    }
+}
+
+/// Wallets that were stopped on lock and may still be finishing the step they were on.
+///
+/// The Zcash SDK stops at the end of its current step (a block batch, a transaction fetch).
+/// Until then it can still write the wallet's files. A silent wipe waits here before deleting
+/// anything, so a wallet that is still winding down can't write the wiped profile's files again.
+@MainActor
+enum WalletShutdown {
+    private static var pending: [UUID: Task<Void, Never>] = [:]
+
+    /// Runs `stop` and keeps track of it until it returns.
+    static func begin(_ stop: @escaping @MainActor () async -> Void) {
+        let id = UUID()
+        pending[id] = Task {
+            await stop()
+            pending[id] = nil
+        }
+    }
+
+    /// True while a stopped wallet is still winding down.
+    static var isBusy: Bool { !pending.isEmpty }
+
+    /// Waits until every stopped wallet has finished, or `timeout` passes. Returns false on
+    /// timeout.
+    @discardableResult
+    static func waitForAll(timeout: Duration = .seconds(15)) async -> Bool {
+        // Polled rather than awaiting the tasks: awaiting a task's value can't be cut short.
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !pending.isEmpty {
+            if clock.now >= deadline || Task.isCancelled { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return true
     }
 }

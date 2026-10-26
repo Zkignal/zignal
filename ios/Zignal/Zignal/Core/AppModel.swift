@@ -128,11 +128,21 @@ final class AppModel {
             lockedUntil = nil
             let keys = try ProfileKeyset(secret: secret)
             if wiped {
-                // Everything of the wiped profile goes: its profile file and its wallet files.
-                // Failures are ignored on purpose: under duress the decoy must still open
-                // normally, and a later wipe attempt runs this again.
+                // Everything of the wiped profile goes: its profile file, its wallet files and
+                // the SDK's per-wallet settings. A wallet stopped on an earlier lock may still be
+                // finishing its last step and could write its files again, so wait for it
+                // first. Failures are ignored on purpose: under duress the decoy must still
+                // open normally, and a later wipe attempt runs this again.
+                let settled = await WalletShutdown.waitForAll()
+                Self.removeEverythingBut(keys)
                 try? store.removeOthers(keeping: keys)
-                WalletFiles.removeWallets(except: keys.walletAlias)
+                if !settled {
+                    // Still running after the wait: delete again once it has stopped.
+                    Task {
+                        await WalletShutdown.waitForAll(timeout: .seconds(300))
+                        Self.removeEverythingBut(keys)
+                    }
+                }
             }
             let seed = try await Task.detached(priority: .userInitiated) {
                 try walletSeed(profileSecret: secret)
@@ -141,6 +151,12 @@ final class AppModel {
         } catch {
             errorText = Self.describe(error)
         }
+    }
+
+    /// Deletes the wallet files and the SDK's wallet settings of every profile except `keys`.
+    private static func removeEverythingBut(_ keys: ProfileKeyset) {
+        WalletFiles.removeWallets(except: keys.walletAlias)
+        WalletFiles.removeSDKDefaults(except: keys.walletAlias)
     }
 
     /// Shows any wrong-PIN wait as soon as a PIN screen appears, before anything is typed.

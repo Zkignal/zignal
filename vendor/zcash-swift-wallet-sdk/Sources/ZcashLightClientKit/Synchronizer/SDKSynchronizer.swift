@@ -275,16 +275,22 @@ public class SDKSynchronizer: Synchronizer {
         Task(priority: .high) {
             await sdkFlags.sdkStopped()
 
-            let status = await self.status
-            guard status != .stopped, status != .disconnected else {
-                logger.info("attempted to stop when status was: \(status)")
-                return
-            }
-
+            // Zignal patch: always stop the processor. A `.stopped` or `.disconnected` status
+            // doesn't mean its poll timer is gone, and stopping is idempotent.
             await blockProcessor.stop()
             await exchangeRateTor?.sleep()
             await httpTor?.sleep()
         }
+    }
+
+    /// Zignal patch: stops the synchronizer and returns once its sync loop has exited, so the
+    /// wallet's files and network connection are no longer in use. The synchronizer can be
+    /// started again with `start(retry:)`.
+    public func stopAndWait() async {
+        await sdkFlags.sdkStopped()
+        await blockProcessor.stopAndWait()
+        await exchangeRateTor?.sleep()
+        await httpTor?.sleep()
     }
 
     // MARK: Witnesses Fix
