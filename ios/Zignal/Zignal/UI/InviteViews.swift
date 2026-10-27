@@ -70,6 +70,7 @@ struct AcceptInviteView: View {
     @State private var sending = false
     @State private var errorText: String?
     @State private var cameraReady = false
+    @State private var pasted = ""
 
     /// - Parameter onStarted: called with the new contact once the chat has started.
     init(session: ProfileSession, onStarted: @escaping (Data) -> Void) {
@@ -82,17 +83,28 @@ struct AcceptInviteView: View {
             Form {
                 if code == nil {
                     Section {
+                        // Paste comes first: it works without camera access.
+                        PasteButton(payloadType: String.self) { strings in
+                            if let text = strings.first { accept(text) }
+                        }
+                        // Also takes a long-press Paste, in case the button above has nothing
+                        // to offer for an invite copied from another app.
+                        TextField("Or paste the invite here", text: $pasted, axis: .vertical)
+                            .lineLimit(1...3)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onChange(of: pasted) { _, text in
+                                // An invite arrives all at once when pasted; don't judge typing.
+                                if text.count >= 40 { accept(text) }
+                            }
                         if cameraReady {
                             InviteScanner { accept($0) }
                                 .frame(height: 320)
                                 .listRowInsets(EdgeInsets())
                         }
-                        PasteButton(payloadType: String.self) { strings in
-                            if let text = strings.first { accept(text) }
-                        }
                     } footer: {
                         Text(cameraReady
-                             ? "Point the camera at your contact's invite, or paste one they sent you."
+                             ? "Paste the invite your contact sent you, or point the camera at their invite."
                              : "Paste the invite your contact sent you. To scan instead, allow camera access for Zignal in Settings (needs iPhone XS or later).")
                     }
                 } else {
@@ -102,7 +114,9 @@ struct AcceptInviteView: View {
                             .autocorrectionDisabled()
                             .lineLimit(1...6)
                     } footer: {
-                        Text("Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.0002 ZEC.")
+                        Text(session.wallet?.canTransact == true
+                             ? "Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.0002 ZEC."
+                             : "Send becomes available once the wallet has started.")
                     }
                 }
                 if let errorText {
@@ -231,12 +245,13 @@ struct InviteScanner: UIViewControllerRepresentable {
 }
 
 /// Copies to this phone only: never to other devices through Universal Clipboard, and
-/// cleared after five minutes.
+/// cleared after five minutes. Stored as UTF-8 plain text, the type that the system Paste
+/// button and other apps read as text.
 enum Clipboard {
     @MainActor
     static func copy(_ text: String) {
         UIPasteboard.general.setItems(
-            [[UTType.plainText.identifier: text]],
+            [[UTType.utf8PlainText.identifier: text]],
             options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(300)]
         )
     }

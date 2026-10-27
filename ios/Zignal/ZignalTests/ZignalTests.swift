@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Testing
+import UIKit
 @testable import Zignal
 
 /// A profile store in a fresh temporary folder with its own device key, so tests never touch
@@ -15,6 +16,19 @@ private func makeTempStore() throws -> ProfileStore {
 
 private func fileNames(_ store: ProfileStore) throws -> [String] {
     try FileManager.default.contentsOfDirectory(atPath: store.directory.path).sorted()
+}
+
+struct ClipboardTests {
+    @Test @MainActor func copiedInviteReadsBackAsText() {
+        Clipboard.copy("zignal:test-invite")
+        #expect(UIPasteboard.general.hasStrings)
+        #expect(UIPasteboard.general.string == "zignal:test-invite")
+    }
+
+    @Test func prepareErrorNamesTheMinimum() {
+        let text = ZignalError.notEnoughToPrepare(minimum: 250_000).errorDescription ?? ""
+        #expect(text.contains("0.0025 ZEC"))
+    }
 }
 
 struct PinPolicyTests {

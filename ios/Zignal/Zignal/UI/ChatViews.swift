@@ -58,10 +58,10 @@ struct ChatListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        // Not disabled while the wallet starts: the invite screen says so, and
+                        // Send on the add-contact screen waits for the wallet.
                         Button("Show my invite", systemImage: "qrcode") { showInvite = true }
-                            .disabled(!walletReady)
                         Button("Scan or paste an invite", systemImage: "qrcode.viewfinder") { addContact = true }
-                            .disabled(!walletReady)
                         Divider()
                         Button("Start demo chat", systemImage: "sparkles") {
                             Task { await session.startDemoChat() }
@@ -86,9 +86,6 @@ struct ChatListView: View {
         // One alert for the whole stack, so a pushed screen never shows a second copy.
         .errorAlert(session)
     }
-
-    /// Invites need a new address, so the wallet must be running.
-    private var walletReady: Bool { session.wallet?.canTransact == true }
 }
 
 private struct ChatRow: View {

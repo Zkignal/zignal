@@ -197,7 +197,9 @@ final class WalletEngine {
         // ZIP-317: 5,000 zatoshis per action; one spend and `count` outputs (the last is change).
         let fee = Int64(5_000 * max(2, count))
         let each = (spendable - fee) / Int64(count)
-        guard count >= 2, each >= 20_000 else { throw ZignalError.notEnoughFunds }
+        guard count >= 2, each >= 20_000 else {
+            throw ZignalError.notEnoughToPrepare(minimum: 20_000 * Int64(max(2, count)) + fee)
+        }
         let address = try await newAddress()
         return try await submit(PaymentRequest.payments(Array(repeating: each, count: count - 1), to: address))
     }
