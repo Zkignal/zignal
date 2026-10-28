@@ -58,4 +58,5 @@ Files: `Sources/ZcashLightClientKit/Block/CompactBlockProcessor.swift`,
 `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, `Package.swift`,
 and this file. Every changed spot is marked `Zignal patch`.
 
-Reported upstream: https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012
+Both fixes are reported upstream: https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012
+(the stop issue, and the mempool watchers in a follow-up comment).

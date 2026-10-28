@@ -11,6 +11,18 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
 > **Status:** experimental, built for the Zecathon (October 2026). Not audited.
 > It runs on Zcash mainnet with real ZEC, so use small amounts.
 
+## Screenshots
+
+<p>
+  <img src="pics/01-welcome.png" width="250" alt="Welcome screen">
+  <img src="pics/02-set-pins.png" width="250" alt="Setting the unlock and duress PINs">
+  <img src="pics/03-panic-pin.png" width="250" alt="Setting the panic PIN">
+</p>
+
+From the iOS simulator: the welcome screen; the three PINs (unlock, duress for the decoy
+profile, panic to erase the real profile); and the panic PIN, which must be confirmed as
+something that can't be undone.
+
 ## What works today
 
 - **Real messages on mainnet:** each profile has its own Zcash wallet. Messages go out as
@@ -30,6 +42,24 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
   verification by safety number.
 - **Demo contact:** a contact that lives on the phone and needs no ZEC. It runs the same
   protocol (handshake, ratchet, 512-byte memos) but never touches the network.
+
+## How Zignal differs from a Zcash wallet
+
+Wallets such as ZODL, Zingo, Ywallet or Cake are built for payments; their memo is a note
+attached to a payment. Zignal is built for messages, and ZEC only pays the network fees.
+
+| | A memo in a Zcash wallet | A Zignal message |
+|---|---|---|
+| Who can read it | Anyone with the recipient's viewing key, past and future memos alike | A viewing key shows only ciphertext: a second end-to-end layer with forward secrecy |
+| Who sent it | No proven sender: anyone can write any name in a memo | Every contact is authenticated in the handshake; safety numbers to compare |
+| Quantum | Zcash's note encryption uses classical cryptography | Hybrid post-quantum handshake (X25519 + ML-KEM-768) inside the memos |
+| Addresses | You hand out your wallet address | A fresh shielded address per contact; no transparent addresses |
+| Conversation | Shown with each transaction | A chat per contact, delivery status, long messages split across memos |
+| On the phone | PIN or Face ID | Duress PIN with a working decoy wallet; panic PIN that erases the real profile |
+| Wallet features | Full: any address type, transparent funds, often swaps | Deliberately minimal and shielded-only: enough to fund your messages |
+
+Zignal doesn't yet show plain-text memos that other wallets attach to the ZEC they send you;
+that's on the roadmap.
 
 ## Try it
 
@@ -105,8 +135,8 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
   wallet while it was syncing could be undone by the SDK's own retry timer, and every sync
   started another mempool watcher that stopping didn't end (each kept a server connection
   open and could recreate a deleted wallet database). With the fixes, a stopped wallet stays
-  stopped. Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`; the first is
-  reported upstream.
+  stopped. Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`; both are reported
+  upstream in [zcash/zcash-swift-wallet-sdk#2012](https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012).
 
 ## How the app protects data on the phone
 
@@ -239,21 +269,30 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 - **Unused invites** stay valid for about three weeks, and whoever uses one first becomes that
   contact. Compare safety numbers before trusting a chat.
 - **NU7:** NU7 activates on mainnet at block 3,543,405 (around November 5, 2026). The Zcash
-  Swift SDK this app is built on (3.0.0) can't send after that, and the original SDK's final
-  release won't support NU7. A compatibility-only update, changing just the SDK in `vendor/`
-  and the code needed to build against it, will be tagged `zecathon-nu7` and pushed to
-  TestFlight. It moves `vendor/` from 3.0.0 to the SDK's final release, 4.0.0, with Zignal's
-  two fixes carried over and NU7 support added. The Zecathon submission is the
-  `zecathon-final` tag.
+  Swift SDK this app is built on (3.0.0) can't send after that. ECC's SDK ends support at
+  NU7: its final release, 4.0.0, doesn't include NU7, and development continues in the ZODL
+  Swift Wallet SDK (AGPLv3). Because Zignal keeps its own patched copy in `vendor/`, it can
+  update it itself. A compatibility-only update, changing just the SDK in `vendor/` and the
+  code needed to build against it, will be tagged `zecathon-nu7` and pushed to TestFlight:
+  either 4.0.0 with Zignal's two fixes and NU7 support added, or the ZODL SDK, decided before
+  activation. The Zecathon submission is the `zecathon-final` tag.
 
 ## Roadmap (after the Zecathon)
 
-- **NU7 compatibility:** an SDK-only update before activation, tagged `zecathon-nu7`.
+- **TestFlight**, once the Apple Developer account is approved.
+- **NU7 compatibility:** an SDK-only update before activation, tagged `zecathon-nu7` (see
+  Security notes: ECC's SDK ends at NU7, so Zignal updates its own copy in `vendor/`).
+- **Notes from other wallets:** show the text memos that other wallets attach to the ZEC they
+  send you, read-only and labelled "sender not verified", with no links.
+- **Send to other shielded wallets**, with a plain memo.
 - **Import a wallet** into either profile from its 24-word phrase, with a clear warning that
   an existing wallet's history becomes linked to your messaging addresses.
 - **Contact requests:** start a chat with any Zignal user from their shielded address, with a
   requests inbox, accept and block, and a small fee for strangers. QR invites stay for meeting
   in person and verifying each other.
+- **Hardening from our review:** hide the recovery words while the screen is recorded or
+  mirrored, cap stored contact requests, one-time prekeys for the first message, show when a
+  contact resets a chat, and let users revoke unused invites.
 - **Later:** post-quantum protection for every message (not only the handshake), and Android.
 
 ## Development log
@@ -285,7 +324,7 @@ libraries:
 - **Zcash Swift SDK** ([ZcashLightClientKit](https://github.com/zcash/zcash-swift-wallet-sdk),
   MIT, Znewco, Inc. (Zcash Open Development Lab), maintained in the `zcash` GitHub
   organization): wallet sync, keys, addresses and transactions. Release 3.0.0 is
-  included in `vendor/` under its own MIT license, with Zignal's fix listed in
+  included in `vendor/` under its own MIT license, with Zignal's two fixes listed in
   `ZIGNAL-PATCHES.md`. It includes **[librustzcash](https://github.com/zcash/librustzcash)**
   (MIT/Apache-2.0).
 - **RustCrypto** crates: `ml-kem`, `chacha20poly1305`, `hkdf`, `hmac`, `sha2`, `argon2`.
@@ -298,6 +337,7 @@ libraries:
 - **Protocol design:** the handshake and ratchet follow the PQXDH and Double Ratchet
   specifications published by Signal. No code was taken from Signal.
 - **Public lightwalletd servers** run by zec.rocks and zcash-infra, used as defaults.
+- **AI assistance:** built with help from Claude (Anthropic); commits list it as co-author.
 
 ## License
 
