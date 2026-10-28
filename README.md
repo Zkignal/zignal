@@ -33,15 +33,21 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
 
 ## Try it
 
-- **TestFlight:** [link to be added]
+- **TestFlight:** pending Apple Developer approval. Until then, build from source with Xcode
+  (see Build and test); a free Apple ID can install it on your own iPhone.
 - **Two iPhones:** on each, set PINs and back up the recovery phrase, then fund the wallet
   with about 0.01 ZEC (Add funds). Received ZEC can be spent after 10 confirmations.
+  Receiving messages needs no ZEC: the sender pays the network fee.
   Zignal only uses shielded addresses: to fund it from an exchange, withdraw to a wallet that
   accepts transparent deposits (such as ZODL), shield there, then send to Zignal.
   On one phone: New chat > Show my invite. On the other: New chat > Scan or paste an invite,
   then write a first message.
-- **One iPhone:** use the demo contact (New chat > Start demo chat) to see the full protocol
-  without ZEC.
+- **One iPhone, on chain:** set up and fund both profiles, then in one profile New chat >
+  Show my invite > Copy invite, and in the other New chat > Scan or paste an invite > Paste.
+- **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
+  protocol without touching the network.
+- **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
+  with delivery status, safety numbers, Tor on and off.
 
 ## Repository layout
 
@@ -169,11 +175,12 @@ bash ios/Zignal/scripts/fetch-sapling-params.sh
 ```
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 54 app tests: PIN rules and the wrong-PIN wait, storage encryption and
+- Cmd+U runs the 56 app tests: PIN rules and the wrong-PIN wait, storage encryption and
   tamper checks, the three-PIN vault (duress and panic), what a silent wipe leaves behind,
   recovery phrases, demo chat across restarts, payment request encoding and address checks,
-  invite parsing against a real invite from the core, memo filtering, wallet settings, waiting
-  for stopped wallets, and a timing test for each unlock step.
+  invite parsing against a real invite from the core, copying an invite as text, memo
+  filtering, wallet settings and messages, waiting for stopped wallets, and a timing test for
+  each unlock step.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its
   dependencies (grpc-swift, SQLite.swift) and the SDK's prebuilt Rust library, checked
   against the checksum in its `Package.swift`.
@@ -267,6 +274,8 @@ git history.
 | 2026-10-25 | `1ccba0e` | Panic PIN: three-slot vault (v2); duress never erases, panic erases the real profile |
 | 2026-10-25 | `7286d05` | Clearer wording on the Set PINs screen |
 | 2026-10-26 | `6793b8c` `7b350bf` | Wallets really stop on lock: Zcash SDK 3.0.0 vendored in `vendor/` with two stop bugs fixed; the panic PIN waits for stopped wallets and also removes the SDK's settings for the wiped wallet |
+| 2026-10-26 | `2b0b86d` `eb7b148` | README for the patched SDK and the three-PIN vault; MIT OR Apache-2.0 license files |
+| 2026-10-27 | `5ec04bb` | Pasting invites works (copied as UTF-8 text), Paste comes first on the add-contact screen, clearer wallet messages |
 
 ## Credits
 
