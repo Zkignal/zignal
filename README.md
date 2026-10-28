@@ -23,6 +23,24 @@ From the iOS simulator: the welcome screen; the three PINs (unlock, duress for t
 profile, panic to erase the real profile); and the panic PIN, which must be confirmed as
 something that can't be undone.
 
+<p>
+  <img src="pics/04-Pin1-Account.png" width="200" alt="Real profile: wallet and chats">
+  <img src="pics/06-Pin1-Comm.png" width="200" alt="Real profile: the conversation">
+  <img src="pics/05-TOR.png" width="200" alt="Network settings: Tor switch and servers">
+</p>
+<p>
+  <img src="pics/07-Pin2-Wallet.png" width="200" alt="Decoy profile: wallet and chats">
+  <img src="pics/09-Pin2-Comm-Pin1.png" width="200" alt="Decoy profile: the same conversation">
+  <img src="pics/08-sync.png" width="200" alt="Decoy profile: wallet syncing">
+</p>
+
+On an iPhone 16 Pro, on Zcash mainnet. The real profile (unlock PIN, "Pin 1") and the decoy
+profile (duress PIN, "Pin 2") on the same phone exchange messages as two contacts: each
+message is a shielded transaction, shown as delivered once it's in a block. One message went
+out with Tor on. Top row: the real profile's chats and wallet, its side of the conversation,
+and the network settings (Tor switch and server list). Bottom row: the decoy profile's chats
+and wallet, its side of the same conversation, and its wallet syncing.
+
 ## What works today
 
 - **Real messages on mainnet:** each profile has its own Zcash wallet. Messages go out as
