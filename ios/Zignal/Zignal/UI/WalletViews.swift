@@ -61,7 +61,7 @@ struct WalletSection: View {
             } header: {
                 Text("Wallet")
             } footer: {
-                Text("Each message is one shielded Zcash transaction and costs about 0.0001 ZEC in network fees. \"Prepare for chatting\" splits your balance into a few notes, once, so several messages can go out in a row.")
+                Text("Each message is one shielded Zcash transaction and costs about 0.0001 ZEC in network fees. \"Prepare\" splits your balance into a few notes, once, so several messages can go out in a row.")
             }
         }
     }
@@ -73,7 +73,7 @@ struct WalletSection: View {
         switch readiness {
         case .ready: return "Ready"
         case .confirming: return "Confirming…"
-        case .prepare, .notEnough, nil: return "Prepare for chatting"
+        case .prepare, .notEnough, nil: return "Prepare"
         }
     }
 
@@ -93,9 +93,9 @@ struct WalletSection: View {
         case .confirming:
             "Confirming. Messages can go out back to back again in a few minutes."
         case .prepare:
-            "Prepare for chatting so several messages can go out in a row."
+            "Prepare splits your balance so several messages can go out in a row."
         case .notEnough(let minimum):
-            "Prepare for chatting needs \(ZecFormat.string(minimum)) that has confirmed. Single messages still work."
+            "Prepare needs \(ZecFormat.string(minimum)) that has confirmed. Single messages still work."
         case nil:
             nil
         }

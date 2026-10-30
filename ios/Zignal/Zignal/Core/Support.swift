@@ -29,7 +29,7 @@ enum ZignalError: LocalizedError {
         case .walletMismatch: "The wallet on this phone doesn't belong to this profile."
         case .notEnoughFunds: "Not enough ZEC in this wallet yet. Add funds and wait for them to confirm."
         case .notEnoughToPrepare(let minimum):
-            "Prepare for chatting needs at least \(String(format: "%.4f", Double(minimum) / 100_000_000)) ZEC that has confirmed. You can still send single messages without it."
+            "Prepare needs at least \(String(format: "%.4f", Double(minimum) / 100_000_000)) ZEC that has confirmed. You can still send single messages without it."
         case .sendRejected(let reason): "The network didn't accept the message: \(reason)"
         case .invalidInvite: "That isn't a valid Zignal invite. Check that you copied all of it."
         case .ownInvite: "That's your own invite. Share it with your contact instead."
