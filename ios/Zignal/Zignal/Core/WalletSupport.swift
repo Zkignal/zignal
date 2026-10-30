@@ -207,6 +207,65 @@ enum IncomingMemos {
     }
 }
 
+/// Whether "Prepare for chatting" would help right now.
+///
+/// Each message spends one note. Its change comes back as a new note of almost the same value,
+/// but that note stays locked until it has 3 confirmations. So after one split the wallet keeps
+/// about the same number of notes, and splitting again only helps once they have been worn
+/// down by fees, or when new funds arrived as one note. The SDK doesn't report how many notes
+/// the wallet holds, so the count is estimated from the spendable balance and the note value
+/// of the last split.
+enum ChatReadiness: Equatable, Sendable {
+    /// About this many messages can go out back to back now. No split needed.
+    case ready(messages: Int)
+    /// Funds or change are confirming. Wait instead of splitting.
+    case confirming
+    /// Splitting would let several messages go out in a row.
+    case prepare
+    /// Too little confirmed ZEC to split. Single messages may still work.
+    case notEnough(minimum: Int64)
+
+    /// Notes a split aims for: enough for a burst of messages while earlier change confirms.
+    static let target = 5
+    /// With at least this many spendable notes, a split isn't worth its fee.
+    static let readyAt = 3
+
+    static func assess(spendable: Int64, pending: Int64, preparedNoteValue: Int64?) -> ChatReadiness {
+        if let value = preparedNoteValue, value > 0 {
+            let now = Int(spendable / value)
+            if now >= readyAt { return .ready(messages: now) }
+            // The notes still exist; recent messages locked some of them until their change confirms.
+            if Int((spendable + pending) / value) >= readyAt { return .confirming }
+        }
+        let minimum = PrepareSplit.minimum(count: target)
+        if spendable >= minimum { return .prepare }
+        return pending > 0 ? .confirming : .notEnough(minimum: minimum)
+    }
+}
+
+/// The arithmetic of "Prepare for chatting": `count - 1` new notes paid to ourselves, plus the
+/// change, which becomes the last note.
+enum PrepareSplit {
+    /// The smallest note worth making: room for a few messages' fees.
+    static let minimumNote: Int64 = 20_000
+
+    /// ZIP 317 fee: 5,000 zatoshis per logical action, at least 2. In one shielded pool the
+    /// actions are the larger of the spends and the outputs (change included).
+    static func fee(spends: Int, outputs: Int) -> Int64 {
+        5_000 * Int64(max(2, spends, outputs))
+    }
+
+    /// Smallest spendable balance that splits into `count` notes from a single spend.
+    static func minimum(count: Int) -> Int64 {
+        minimumNote * Int64(count) + fee(spends: 1, outputs: count)
+    }
+
+    /// Value of each new note once `fee` is paid. The change is at least as large.
+    static func noteValue(spendable: Int64, count: Int, fee: Int64) -> Int64 {
+        (spendable - fee) / Int64(max(1, count))
+    }
+}
+
 /// Amounts for display: ZEC with up to 8 decimals, trailing zeros trimmed.
 enum ZecFormat {
     static func string(_ zatoshis: Int64) -> String {

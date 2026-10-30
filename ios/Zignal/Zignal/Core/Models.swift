@@ -22,6 +22,9 @@ struct ProfileData: Codable, Equatable {
     /// Wallet transactions whose memos have already been read, oldest first. Lets every sync
     /// pick up exactly the transactions it hasn't seen yet, in whatever order they're found.
     var processedTransactions: [Data]?
+    /// Zatoshis in each note made by the last "Prepare for chatting". Used to estimate how many
+    /// messages can go out back to back without splitting again.
+    var preparedNoteValue: Int64?
 }
 
 /// A profile being restored from its recovery phrase, waiting for PINs to be set.

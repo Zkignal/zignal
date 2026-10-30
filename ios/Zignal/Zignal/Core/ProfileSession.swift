@@ -18,8 +18,17 @@ final class ProfileSession {
     private(set) var walletCreated: Date?
     private(set) var recoveryPhraseShown: Bool
     private(set) var walletSettings: WalletSettings
+    /// Value of each note made by the last "Prepare for chatting", if any.
+    private(set) var preparedNoteValue: Int64?
     /// This profile's Zcash wallet while unlocked. Nil until it starts, and in tests.
     private(set) var wallet: WalletEngine?
+
+    /// Whether splitting the balance would help right now (see `ChatReadiness`).
+    var chatReadiness: ChatReadiness? {
+        guard let wallet else { return nil }
+        return ChatReadiness.assess(spendable: wallet.spendable, pending: wallet.pending,
+                                    preparedNoteValue: preparedNoteValue)
+    }
     var errorText: String?
 
     /// Wallet transactions remembered as already read. Older ones drop off; zkw-core's replay
@@ -51,6 +60,7 @@ final class ProfileSession {
         walletSettings = loaded.data.walletSettings ?? .standard
         walletRestored = loaded.data.walletRestored ?? false
         processedTransactions = loaded.data.processedTransactions ?? []
+        preparedNoteValue = loaded.data.preparedNoteValue
     }
 
     // MARK: - Lifecycle
@@ -235,7 +245,9 @@ final class ProfileSession {
             return false
         }
         do {
-            _ = try await wallet.prepareForChatting()
+            let result = try await wallet.prepareForChatting()
+            preparedNoteValue = result.noteValue
+            persist()
             return true
         } catch {
             report(error)
@@ -458,7 +470,8 @@ final class ProfileSession {
                                recoveryPhraseShown: recoveryPhraseShown,
                                walletRestored: walletRestored ? true : nil,
                                walletSettings: walletSettings == .standard ? nil : walletSettings,
-                               processedTransactions: processedTransactions)
+                               processedTransactions: processedTransactions,
+                               preparedNoteValue: preparedNoteValue)
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }

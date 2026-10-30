@@ -193,26 +193,46 @@ final class WalletEngine {
     /// Splits the spendable balance into `count` notes by paying ourselves, so several
     /// messages can go out back to back. Each send locks its note until the change has 3
     /// confirmations; with one note, that's one message every few minutes.
-    func prepareForChatting(notes count: Int = 10) async throws -> Data {
-        // ZIP-317: 5,000 zatoshis per action; one spend and `count` outputs (the last is change).
-        let fee = Int64(5_000 * max(2, count))
-        let each = (spendable - fee) / Int64(count)
-        guard count >= 2, each >= 20_000 else {
-            throw ZignalError.notEnoughToPrepare(minimum: 20_000 * Int64(max(2, count)) + fee)
+    /// Returns the transaction id and the value of each new note.
+    func prepareForChatting(notes count: Int = ChatReadiness.target) async throws -> (txid: Data, noteValue: Int64) {
+        let minimum = PrepareSplit.minimum(count: count)
+        guard count >= 2, spendable >= minimum else {
+            throw ZignalError.notEnoughToPrepare(minimum: minimum)
         }
         let address = try await newAddress()
-        return try await submit(PaymentRequest.payments(Array(repeating: each, count: count - 1), to: address))
+        // First guess: one note pays for it all. When the wallet has to combine several notes,
+        // the fee grows with them; the proposal says what it really is, so ask once more with it.
+        var fee = PrepareSplit.fee(spends: 1, outputs: count)
+        var each = PrepareSplit.noteValue(spendable: spendable, count: count, fee: fee)
+        var proposal = try await propose(PaymentRequest.payments(Array(repeating: each, count: count - 1), to: address))
+        let required = proposal.totalFeeRequired().amount
+        if required > fee {
+            fee = required
+            each = PrepareSplit.noteValue(spendable: spendable, count: count, fee: fee)
+            guard each >= PrepareSplit.minimumNote else {
+                throw ZignalError.notEnoughToPrepare(minimum: PrepareSplit.minimumNote * Int64(count) + fee)
+            }
+            proposal = try await propose(PaymentRequest.payments(Array(repeating: each, count: count - 1), to: address))
+        }
+        return (try await submit(proposal), each)
     }
 
-    private func submit(_ uri: String) async throws -> Data {
+    private func propose(_ uri: String) async throws -> Proposal {
         guard let sync = synchronizer, let account else { throw ZignalError.walletNotReady }
-        let proposal: Proposal
         do {
-            proposal = try await sync.proposefulfillingPaymentURI(uri, accountUUID: account.id)
+            return try await sync.proposefulfillingPaymentURI(uri, accountUUID: account.id)
         } catch ZcashError.rustProposeTransferFromURI(let reason)
                     where reason.localizedCaseInsensitiveContains("insufficient") {
             throw ZignalError.notEnoughFunds
         }
+    }
+
+    private func submit(_ uri: String) async throws -> Data {
+        try await submit(try await propose(uri))
+    }
+
+    private func submit(_ proposal: Proposal) async throws -> Data {
+        guard let sync = synchronizer, let account else { throw ZignalError.walletNotReady }
         let key = try DerivationTool(networkType: networkType)
             .deriveUnifiedSpendingKey(seed: seed, accountIndex: account.hdAccountIndex ?? Zip32AccountIndex(0))
         var sent: Data?

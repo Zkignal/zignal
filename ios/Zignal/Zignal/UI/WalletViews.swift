@@ -7,7 +7,6 @@ struct WalletSection: View {
     @State private var showFunds = false
     @State private var showSettings = false
     @State private var preparing = false
-    @State private var prepared = false
 
     init(session: ProfileSession) {
         self.session = session
@@ -30,29 +29,75 @@ struct WalletSection: View {
                         }
                     }
                 }
-                HStack(spacing: 20) {
-                    Button("Add funds", systemImage: "qrcode") { showFunds = true }
-                    Button(prepared ? "Prepared" : "Prepare for chatting", systemImage: "square.split.2x2") {
-                        Task {
-                            preparing = true
-                            prepared = await session.prepareForChatting()
-                            preparing = false
+                VStack(alignment: .leading, spacing: 8) {
+                    // Bordered so each one reads as a button, not as text. An explicit style also
+                    // keeps each button its own tap target inside the list row.
+                    HStack(spacing: 8) {
+                        Button("Add funds", systemImage: "qrcode") { showFunds = true }
+                        Button(prepareTitle(readiness), systemImage: prepareIcon(readiness)) {
+                            Task {
+                                preparing = true
+                                _ = await session.prepareForChatting()
+                                preparing = false
+                            }
                         }
+                        .disabled(preparing || readiness != .prepare || !wallet.canTransact)
+                        Spacer(minLength: 0)
+                        // Icon only, so the row fits a phone's width; VoiceOver still reads "Network".
+                        Button("Network", systemImage: "network") { showSettings = true }
+                            .labelStyle(.iconOnly)
                     }
-                    .disabled(preparing || prepared || !wallet.canTransact || wallet.spendable <= 0)
-                    Spacer()
-                    Button("Network", systemImage: "network") { showSettings = true }
-                        .labelStyle(.iconOnly)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    if let note = readinessNote(readiness) {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .buttonStyle(.borderless)
                 // On this row, not the section: a modifier on a section applies to every row.
                 .sheet(isPresented: $showFunds) { AddFundsView(session: session) }
                 .sheet(isPresented: $showSettings) { WalletSettingsView(session: session) }
             } header: {
                 Text("Wallet")
             } footer: {
-                Text("Each message is one shielded Zcash transaction and costs about 0.0001 ZEC in network fees. \"Prepare for chatting\" splits your balance so several messages can go out in a row.")
+                Text("Each message is one shielded Zcash transaction and costs about 0.0001 ZEC in network fees. \"Prepare for chatting\" splits your balance into a few notes, once, so several messages can go out in a row.")
             }
+        }
+    }
+
+    private var readiness: ChatReadiness? { session.chatReadiness }
+
+    private func prepareTitle(_ readiness: ChatReadiness?) -> String {
+        if preparing { return "Preparing…" }
+        switch readiness {
+        case .ready: return "Ready"
+        case .confirming: return "Confirming…"
+        case .prepare, .notEnough, nil: return "Prepare for chatting"
+        }
+    }
+
+    private func prepareIcon(_ readiness: ChatReadiness?) -> String {
+        switch readiness {
+        case .ready: "checkmark.circle"
+        case .confirming: "hourglass"
+        case .prepare, .notEnough, nil: "square.split.2x2"
+        }
+    }
+
+    /// One line under the buttons saying what the wallet can do now. Nil when nothing needs saying.
+    private func readinessNote(_ readiness: ChatReadiness?) -> String? {
+        switch readiness {
+        case .ready(let messages):
+            "Ready: about \(messages) messages can go out back to back."
+        case .confirming:
+            "Confirming. Messages can go out back to back again in a few minutes."
+        case .prepare:
+            "Prepare for chatting so several messages can go out in a row."
+        case .notEnough(let minimum):
+            "Prepare for chatting needs \(ZecFormat.string(minimum)) that has confirmed. Single messages still work."
+        case nil:
+            nil
         }
     }
 

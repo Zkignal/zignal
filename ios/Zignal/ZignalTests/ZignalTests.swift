@@ -606,6 +606,52 @@ struct WalletSettingsTests {
         #expect(data.walletRestored == nil)
         #expect(data.walletSettings == nil)
         #expect(data.processedTransactions == nil)
+        #expect(data.preparedNoteValue == nil)
+    }
+}
+
+struct ChatReadinessTests {
+    @Test func readyWhenEnoughPreparedNotesAreSpendable() {
+        #expect(ChatReadiness.assess(spendable: 400_000, pending: 0, preparedNoteValue: 100_000) == .ready(messages: 4))
+    }
+
+    @Test func waitsWhileRecentMessagesLockPreparedNotes() {
+        // Five notes of 100,000: two spendable, three locked until their change confirms.
+        #expect(ChatReadiness.assess(spendable: 200_000, pending: 300_000, preparedNoteValue: 100_000) == .confirming)
+    }
+
+    @Test func suggestsASplitOnlyWhenItHelps() {
+        #expect(ChatReadiness.assess(spendable: 500_000, pending: 0, preparedNoteValue: nil) == .prepare)
+        // Prepared notes worn down by fees: two left, nothing confirming.
+        #expect(ChatReadiness.assess(spendable: 200_000, pending: 0, preparedNoteValue: 100_000) == .prepare)
+    }
+
+    @Test func confirmingFundsWaitBeforeSplitting() {
+        #expect(ChatReadiness.assess(spendable: 0, pending: 900_000, preparedNoteValue: nil) == .confirming)
+    }
+
+    @Test func tooLittleToSplitNamesTheMinimum() {
+        #expect(ChatReadiness.assess(spendable: 50_000, pending: 0, preparedNoteValue: nil) == .notEnough(minimum: 125_000))
+    }
+}
+
+struct PrepareSplitTests {
+    @Test func feeCountsTheLargerOfSpendsAndOutputs() {
+        #expect(PrepareSplit.fee(spends: 1, outputs: 1) == 10_000)
+        #expect(PrepareSplit.fee(spends: 1, outputs: 5) == 25_000)
+        // The Oct 27 split that spent 11 notes into 10 cost 55,000 zatoshis.
+        #expect(PrepareSplit.fee(spends: 11, outputs: 10) == 55_000)
+    }
+
+    @Test func changeIsAtLeastAsLargeAsEachNote() {
+        let each = PrepareSplit.noteValue(spendable: 900_000, count: 5, fee: 25_000)
+        #expect(each == 175_000)
+        #expect(900_000 - 4 * each - 25_000 >= each)
+    }
+
+    @Test func minimumCoversNotesAndFee() {
+        #expect(PrepareSplit.minimum(count: 5) == 125_000)
+        #expect(PrepareSplit.minimum(count: 10) == 250_000)
     }
 }
 
