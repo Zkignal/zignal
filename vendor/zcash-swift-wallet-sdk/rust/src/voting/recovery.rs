@@ -1,0 +1,442 @@
+use std::panic::AssertUnwindSafe;
+
+use anyhow::anyhow;
+use ffi_helpers::panic::catch_panic;
+
+use crate::{unwrap_exc_or, unwrap_exc_or_null};
+
+use super::constants::{KEYSTONE_SIGNATURE_LEN, PCZT_SIGHASH_LEN, RANDOMIZED_KEY_LEN};
+use super::db::VotingDatabaseHandle;
+use super::helpers::{bytes_from_ptr, json_to_boxed_slice, str_from_ptr};
+
+#[derive(serde::Serialize)]
+struct JsonKeystoneSignatureRecord {
+    bundle_index: u32,
+    sig: Vec<u8>,
+    sighash: Vec<u8>,
+    rk: Vec<u8>,
+}
+
+impl From<zcash_voting::storage::KeystoneSignatureRecord> for JsonKeystoneSignatureRecord {
+    fn from(record: zcash_voting::storage::KeystoneSignatureRecord) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            sig: record.sig,
+            sighash: record.sighash,
+            rk: record.rk,
+        }
+    }
+}
+
+/// Persist the on-chain transaction hash of a submitted delegation bundle.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` and `tx_hash` must be valid UTF-8 pointers with their stated lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_store_delegation_tx_hash(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    tx_hash: *const u8,
+    tx_hash_len: usize,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let tx_hash_str = unsafe { str_from_ptr(tx_hash, tx_hash_len) }?;
+        handle
+            .db
+            .store_delegation_tx_hash(&round_id_str, bundle_index, &tx_hash_str)
+            .map_err(|e| anyhow!("store_delegation_tx_hash failed: {}", e))?;
+        Ok(0)
+    });
+    unwrap_exc_or(res, -1)
+}
+
+/// Load a previously stored delegation transaction hash.
+///
+/// Returns a JSON-encoded `Option<String>`.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_get_delegation_tx_hash(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+) -> *mut crate::ffi::BoxedSlice {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let hash = handle
+            .db
+            .get_delegation_tx_hash(&round_id_str, bundle_index)
+            .map_err(|e| anyhow!("get_delegation_tx_hash failed: {}", e))?;
+        json_to_boxed_slice(&hash)
+    });
+    unwrap_exc_or_null(res)
+}
+
+/// Persist the on-chain transaction hash of a submitted vote.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` and `tx_hash` must be valid UTF-8 pointers with their stated lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_store_vote_tx_hash(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+    tx_hash: *const u8,
+    tx_hash_len: usize,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let tx_hash_str = unsafe { str_from_ptr(tx_hash, tx_hash_len) }?;
+        // zcash_voting 1.0 records vote tx hashes through the atomic,
+        // idempotent recovery writer (conflicting hashes are rejected).
+        handle
+            .db
+            .mark_vote_submitted(&round_id_str, bundle_index, proposal_id, &tx_hash_str)
+            .map_err(|e| anyhow!("store_vote_tx_hash failed: {}", e))?;
+        Ok(0)
+    });
+    unwrap_exc_or(res, -1)
+}
+
+/// Load a previously stored vote transaction hash.
+///
+/// Returns a JSON-encoded `Option<String>`.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_get_vote_tx_hash(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> *mut crate::ffi::BoxedSlice {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let hash = handle
+            .db
+            .get_vote_tx_hash(&round_id_str, bundle_index, proposal_id)
+            .map_err(|e| anyhow!("get_vote_tx_hash failed: {}", e))?;
+        json_to_boxed_slice(&hash)
+    });
+    unwrap_exc_or_null(res)
+}
+
+/// Persist a vote commitment bundle and vote-commitment-tree position.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` and `bundle_json` must be valid UTF-8 pointers with their stated lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_store_commitment_bundle(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+    bundle_json: *const u8,
+    bundle_json_len: usize,
+    vc_tree_position: u64,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| -> anyhow::Result<i32> {
+        // Superseded: zcash_voting 1.0 persists commitment bundles itself as
+        // part of `vote::commit` (recovery JSON + positions ride the crate's
+        // own writers, e.g. `CommittedVote::record_vc_position`); externally
+        // injected bundles are no longer accepted.
+        let _ = (
+            &db,
+            round_id,
+            round_id_len,
+            bundle_index,
+            proposal_id,
+            bundle_json,
+            bundle_json_len,
+            vc_tree_position,
+        );
+        Err(anyhow!(
+            "voting: store_commitment_bundle is superseded — commitment bundles are persisted by the vote commit flow"
+        ))
+    });
+    unwrap_exc_or(res, -1)
+}
+
+/// Load a stored commitment bundle and vote-commitment-tree position.
+///
+/// Returns a JSON-encoded `Option<(String, u64)>`.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_get_commitment_bundle(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> *mut crate::ffi::BoxedSlice {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let result = handle
+            .db
+            .get_commitment_bundle(&round_id_str, bundle_index, proposal_id)
+            .map_err(|e| anyhow!("get_commitment_bundle failed: {}", e))?;
+        json_to_boxed_slice(&result)
+    });
+    unwrap_exc_or_null(res)
+}
+
+/// The enriched committed-vote JSON plus the currently stored
+/// vote-commitment tree position.
+#[derive(serde::Serialize)]
+struct JsonRecoveredCommittedVote {
+    #[serde(flatten)]
+    committed: super::vote::JsonCommittedVoteBundle,
+    vc_tree_position: u64,
+}
+
+/// Record the confirmed vote-commitment tree position for a committed vote.
+///
+/// Wraps `CommittedVote::recover` + `record_vc_position`: after the cast-vote
+/// transaction confirms with a `leaf_index`, record the VC position so
+/// recovered helper-share payloads carry it. Returns 0 on success, -1 on error.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_record_vc_position(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+    vc_tree_position: u64,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let committed = zcash_voting::vote::CommittedVote::recover(
+            &handle.db,
+            &round_id_str,
+            bundle_index,
+            proposal_id,
+        )
+        .map_err(|e| anyhow!("record_vc_position failed: {}", e))?;
+        committed
+            .record_vc_position(&handle.db, vc_tree_position)
+            .map_err(|e| anyhow!("record_vc_position failed: {}", e))?;
+        Ok(0)
+    });
+    unwrap_exc_or(res, -1)
+}
+
+/// Reconstruct a committed vote from crate recovery state.
+///
+/// Returns the same enriched JSON as `zcashlc_voting_build_vote_commitment`
+/// (bundle fields + `vote_auth_sig` + `share_payloads`, with payloads carrying
+/// the currently stored VC tree position) plus `vc_tree_position`. Call after
+/// `zcashlc_voting_record_vc_position` to obtain payloads at the confirmed
+/// position. Returns null (with the error retrievable) when no committed vote
+/// exists for the key.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_recover_committed_vote(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> *mut crate::ffi::BoxedSlice {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let committed = zcash_voting::vote::CommittedVote::recover(
+            &handle.db,
+            &round_id_str,
+            bundle_index,
+            proposal_id,
+        )
+        .map_err(|e| anyhow!("recover_committed_vote failed: {}", e))?;
+        let signed = committed
+            .signed_commitment(&handle.db)
+            .map_err(|e| anyhow!("failed to read committed vote: {}", e))?;
+        let vc_tree_position = zcash_voting::recovery::recoverable_commitment_bundle(
+            &handle.db,
+            &round_id_str,
+            bundle_index,
+            proposal_id,
+        )
+        .map_err(|e| anyhow!("recover_committed_vote failed: {}", e))?
+        .map(|bundle| bundle.vc_tree_position)
+        .unwrap_or(0);
+        json_to_boxed_slice(&JsonRecoveredCommittedVote {
+            committed: super::vote::committed_vote_json(&signed),
+            vc_tree_position,
+        })
+    });
+    unwrap_exc_or_null(res)
+}
+
+/// Persist a Keystone-produced PCZT signature.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+/// - `sig` must point to exactly 64 bytes.
+/// - `sighash` and `rk` must each point to exactly 32 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_store_keystone_signature(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+    bundle_index: u32,
+    sig: *const u8,
+    sig_len: usize,
+    sighash: *const u8,
+    sighash_len: usize,
+    rk: *const u8,
+    rk_len: usize,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        if sig_len != KEYSTONE_SIGNATURE_LEN {
+            return Err(anyhow!(
+                "sig must be {} bytes, got {}",
+                KEYSTONE_SIGNATURE_LEN,
+                sig_len
+            ));
+        }
+        if sighash_len != PCZT_SIGHASH_LEN {
+            return Err(anyhow!(
+                "sighash must be {} bytes, got {}",
+                PCZT_SIGHASH_LEN,
+                sighash_len
+            ));
+        }
+        if rk_len != RANDOMIZED_KEY_LEN {
+            return Err(anyhow!(
+                "rk must be {} bytes, got {}",
+                RANDOMIZED_KEY_LEN,
+                rk_len
+            ));
+        }
+        let sig_bytes = unsafe { bytes_from_ptr(sig, sig_len) }?;
+        let sighash_bytes = unsafe { bytes_from_ptr(sighash, sighash_len) }?;
+        let rk_bytes = unsafe { bytes_from_ptr(rk, rk_len) }?;
+        handle
+            .db
+            .store_keystone_signature(
+                &round_id_str,
+                bundle_index,
+                sig_bytes,
+                sighash_bytes,
+                rk_bytes,
+            )
+            .map_err(|e| anyhow!("store_keystone_signature failed: {}", e))?;
+        Ok(0)
+    });
+    unwrap_exc_or(res, -1)
+}
+
+/// Load all Keystone signatures stored for a round.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_get_keystone_signatures(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+) -> *mut crate::ffi::BoxedSlice {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        let sigs = handle
+            .db
+            .get_keystone_signatures(&round_id_str)
+            .map_err(|e| anyhow!("get_keystone_signatures failed: {}", e))?;
+
+        let out: Vec<JsonKeystoneSignatureRecord> = sigs.into_iter().map(Into::into).collect();
+
+        json_to_boxed_slice(&out)
+    });
+    unwrap_exc_or_null(res)
+}
+
+/// Remove all recovery-state rows for a round.
+///
+/// # Safety
+///
+/// - `db` must be a valid, non-null `VotingDatabaseHandle` pointer.
+/// - `round_id` must be a valid UTF-8 pointer with its stated length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zcashlc_voting_clear_recovery_state(
+    db: *mut VotingDatabaseHandle,
+    round_id: *const u8,
+    round_id_len: usize,
+) -> i32 {
+    let db = AssertUnwindSafe(db);
+    let res = catch_panic(|| {
+        let handle =
+            unsafe { db.as_ref() }.ok_or_else(|| anyhow!("VotingDatabaseHandle is null"))?;
+        let round_id_str = unsafe { str_from_ptr(round_id, round_id_len) }?;
+        handle
+            .db
+            .clear_recovery_state(&round_id_str)
+            .map_err(|e| anyhow!("clear_recovery_state failed: {}", e))?;
+        Ok(0)
+    });
+    unwrap_exc_or(res, -1)
+}
