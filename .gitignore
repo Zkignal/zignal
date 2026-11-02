@@ -26,6 +26,9 @@ __pycache__/
 .swiftpm/
 .build/
 
+# libzcashlc built from source by vendor/zcash-swift-wallet-sdk/Scripts/build-ios-ffi.sh
+vendor/zcash-swift-wallet-sdk/LocalPackages/
+
 # Signing material and build outputs (never commit)
 *.p12
 *.p8

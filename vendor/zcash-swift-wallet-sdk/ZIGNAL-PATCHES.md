@@ -2,10 +2,59 @@
 
 This folder is ZcashLightClientKit as released at tag `3.0.0` of
 https://github.com/zcash/zcash-swift-wallet-sdk (MIT License, see `LICENSE`), exported with
-`git archive 3.0.0 Package.swift LICENSE README.md Sources`. It links the same prebuilt
-`libzcashlc` binary as the upstream release (same URL and checksum in `Package.swift`).
+`git archive 3.0.0 Package.swift LICENSE README.md Sources`, plus the SDK's Rust layer
+(`Cargo.toml`, `rust/`) and three files from `BuildSupport/` of the same tag. Zignal builds
+`libzcashlc` from that Rust source instead of linking the prebuilt upstream binary.
 
 Only the changes below differ from upstream. Everything else is byte-for-byte the release.
+
+## NU7: `libzcashlc` built from source on the NU7 crates
+
+**Problem.** The NU7 network upgrade activates at mainnet block 3,543,405 (testnet 4,465,026).
+The prebuilt `libzcashlc` of SDK 3.0.0 is built on a librustzcash revision of August 7, 2026,
+which has no NU7 mainnet height. After activation it computes the wrong consensus branch ID: the
+SDK's server check (`ValidateServerAction`) then stops syncing, and transactions would carry the
+wrong branch ID. ECC's SDK has reached end of life and gets no NU7 release; librustzcash's NU7
+releases came out on October 21-22, 2026.
+
+**Changes.**
+- `Cargo.toml`, `Cargo.lock`, `rust/`: the Rust layer of tag 3.0.0 (version `3.0.0-zignal.1`),
+  moved to librustzcash's NU7 releases from crates.io: zcash_protocol 0.11, zcash_address 0.14,
+  zcash_primitives and zcash_proofs 0.31, zcash_keys 0.17, zcash_client_backend 0.25,
+  zcash_client_sqlite 0.23, pczt 0.10, orchard 0.16, sapling-crypto 0.9, rand 0.10. No git
+  dependencies.
+  - Source updates for the new crate APIs: the system random number generator is now passed as
+    `UnwrapErr<SysRng>` (rand 0.10), transaction building takes a clock, unified addresses
+    carry a revision, and the encoded unified spending key comes back wrapped as a secret. What
+    the library does is unchanged apart from NU7 itself.
+  - TLS and HTTP/2: `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `rustls` 0.23.46 or later
+    (RUSTSEC-2026-0285, -0346, -0348, -0349) and `h2` 0.4.16 or later (RUSTSEC-2026-0258).
+  - Remaining RustSec advisories in `Cargo.lock` all come in through arti, the Tor client, which
+    Zignal leaves off by default: `zstd` (decompressing Tor directory documents), `rsa` (the
+    Marvin attack targets private-key decryption; a Tor client only verifies signatures) and
+    `crypto-bigint` (SSH key parsing for onion services, which Zignal doesn't use). They clear
+    when arti moves to newer versions.
+  - EIP-681 parsing and the Orchard-to-Ironwood pool migration are left out; Zignal doesn't use
+    them. `rust/src/eip681.rs` and `rust/src/migration.rs` are stubs that
+    `Scripts/gen_stubs.py` generates from the upstream files of the same name: same C
+    declarations, and each call reports "not supported in this build". About 13,000 lines of
+    upstream code are left out.
+- The C header that `rust/build.rs` generates (`zcashlc.h`) declares exactly what the 3.0.0
+  release's header declares, so the Swift code is unchanged.
+- `Package.swift`: links `libzcashlc` from `LocalPackages/` only. There is no fallback to the
+  upstream binary, because that one stops working at NU7.
+- `Scripts/build-ios-ffi.sh` builds the iPhone and Simulator slices and installs them in
+  `LocalPackages/` (git-ignored). It builds for iOS 17.0 and later, the app's minimum, and stops
+  if any part of the library needs a newer iOS. It removes the build machine's file paths from
+  the library (upstream's release binary contains its builder's home folder path) and stops if
+  any remain.
+  `BuildSupport/` holds upstream's `module.modulemap`, `platform-Info.plist` and
+  `LocalPackages-Package.swift`, unchanged.
+
+**Build** (macOS with Xcode, Rust 1.97 or newer), from this folder:
+
+    rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+    ./Scripts/build-ios-ffi.sh
 
 ## Fix: `stop()` could be undone by the SDK itself
 
