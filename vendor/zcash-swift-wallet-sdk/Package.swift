@@ -1,43 +1,25 @@
 // swift-tools-version:5.6
-// Vendored by Zignal from zcash-swift-wallet-sdk 3.0.0 (MIT), with the stop fix described in
-// ZIGNAL-PATCHES.md. Same prebuilt libzcashlc binary and checksum as the upstream release.
+// Vendored by Zignal from zcash-swift-wallet-sdk 3.0.0 (MIT), with the changes described in
+// ZIGNAL-PATCHES.md. libzcashlc is built from this folder's Rust source, which is on the NU7
+// crates, not taken from the upstream 3.0.0 release.
 import PackageDescription
-import Foundation
 
-// Automatically detect local FFI development mode.
-// When LocalPackages/Package.swift exists (created by Scripts/init-local-ffi.sh),
-// the SDK builds against the locally-built FFI instead of the pre-built binary
-// from GitHub Releases. Run `rm -rf LocalPackages` to switch back.
-let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let useLocalFFI = FileManager.default.fileExists(atPath: packageDir + "/LocalPackages/Package.swift")
-
-var dependencies: [Package.Dependency] = [
+// libzcashlc comes from LocalPackages/, which Scripts/build-ios-ffi.sh creates. There is no
+// fallback to the upstream 3.0.0 binary on purpose: that binary can't follow the chain after NU7,
+// so without LocalPackages/ package resolution fails instead of quietly linking it.
+let dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/grpc/grpc-swift.git", from: "1.24.2"),
-    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.3")
+    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.3"),
+    .package(name: "libzcashlc", path: "LocalPackages")
 ]
 
-var sdkDependencies: [Target.Dependency] = [
+let sdkDependencies: [Target.Dependency] = [
     .product(name: "SQLite", package: "SQLite.swift"),
     .product(name: "GRPC", package: "grpc-swift"),
+    .product(name: "libzcashlc", package: "libzcashlc")
 ]
 
 var targets: [Target] = []
-
-if useLocalFFI {
-    dependencies.append(.package(name: "libzcashlc", path: "LocalPackages"))
-    sdkDependencies.append(.product(name: "libzcashlc", package: "libzcashlc"))
-} else {
-    // Binary target for the Rust FFI library
-    // Updated by Scripts/release.sh during the release process
-    targets.append(
-        .binaryTarget(
-            name: "libzcashlc",
-            url: "https://github.com/zcash/zcash-swift-wallet-sdk/releases/download/3.0.0/libzcashlc.xcframework.zip",
-            checksum: "122bff46bb5b34ee354170e261d9ac7f61efe09962a411a99419782cb94857fc"
-        )
-    )
-    sdkDependencies.append("libzcashlc")
-}
 
 targets.append(contentsOf: [
     .target(
