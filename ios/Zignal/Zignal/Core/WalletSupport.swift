@@ -207,6 +207,51 @@ enum IncomingMemos {
     }
 }
 
+enum SentMemos {
+    /// The 512-byte memos one of our own transactions carried to other wallets, or nil while
+    /// the wallet is still fetching it. Change and transparent outputs carry no messages, and
+    /// Prepare's payments to ourselves have empty memos.
+    static func extract(from outputs: [WalletOutput]) -> [Data]? {
+        var memos: [Data] = []
+        for output in outputs where output.isShielded && output.fromUs && !output.isChange {
+            switch output.memo {
+            case .notFetched:
+                return nil
+            case .binary(let bytes):
+                if let memo = IncomingMemos.fullMemo(binary: bytes) { memos.append(memo) }
+            case .other:
+                continue
+            }
+        }
+        return memos
+    }
+}
+
+/// Sends cut short by a lock or a crash. `LoadedProfile.load` shows them as failed because it
+/// can't know whether their transaction reached the network. This finds the ones that did, so
+/// they aren't paid for twice.
+enum InterruptedSends {
+    /// Marks failed outgoing messages delivered when one of our mined transactions carried
+    /// their first memo. Only mined transactions count: an unmined one may never have been
+    /// broadcast. Returns true if any message changed.
+    static func reconcile(_ messages: inout [ChatMessage],
+                          minedSent: [(txid: Data, memos: [Data])]) -> Bool {
+        var txidByMemo: [Data: Data] = [:]
+        for tx in minedSent {
+            for memo in tx.memos { txidByMemo[memo] = tx.txid }
+        }
+        var changed = false
+        for i in messages.indices where messages[i].outgoing && messages[i].status == .failed {
+            guard let first = messages[i].pendingMemos?.first, let txid = txidByMemo[first] else { continue }
+            messages[i].status = .delivered
+            messages[i].txid = txid
+            messages[i].pendingMemos = nil
+            changed = true
+        }
+        return changed
+    }
+}
+
 /// Whether "Prepare for chatting" would help right now.
 ///
 /// Each message spends one note. Its change comes back as a new note of almost the same value,

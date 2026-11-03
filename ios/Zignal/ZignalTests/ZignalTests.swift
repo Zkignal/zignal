@@ -581,6 +581,71 @@ struct IncomingMemosTests {
     }
 }
 
+struct SentMemosTests {
+    private func output(fromUs: Bool = true, change: Bool = false, shielded: Bool = true,
+                        _ memo: WalletOutput.Memo) -> WalletOutput {
+        WalletOutput(fromUs: fromUs, isChange: change, isShielded: shielded, memo: memo)
+    }
+
+    @Test func keepsOnlyBinaryMemosWeSentToOthers() throws {
+        let memos = try #require(SentMemos.extract(from: [
+            output(.binary([1, 2, 3])),
+            output(fromUs: false, .binary([4, 5, 6])),
+            output(change: true, .binary([7, 8, 9])),
+            output(shielded: false, .binary([10])),
+            output(.other),
+        ]))
+        let expected = try #require(IncomingMemos.fullMemo(binary: [1, 2, 3]))
+        #expect(memos == [expected])
+    }
+
+    @Test func waitsForMemosThatArentFetchedYet() {
+        #expect(SentMemos.extract(from: [output(.binary([1])), output(.notFetched)]) == nil)
+        // Outputs from others don't matter, fetched or not.
+        #expect(SentMemos.extract(from: [output(fromUs: false, .notFetched)]) == [])
+    }
+}
+
+struct InterruptedSendsTests {
+    private let peer = Data(repeating: 7, count: 32)
+    private let txid = Data(repeating: 9, count: 32)
+
+    private func memo(_ byte: UInt8) -> Data {
+        Data([0xFF, byte]) + Data(count: 510)
+    }
+
+    private func failed(_ memos: [Data]) -> ChatMessage {
+        var message = ChatMessage.outgoing("hi", to: peer, memos: memos.count)
+        message.status = .failed
+        message.pendingMemos = memos
+        return message
+    }
+
+    @Test func failedSendFoundOnChainIsDelivered() {
+        var messages = [failed([memo(1), memo(2)])]
+        #expect(InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(1), memo(2)])]))
+        #expect(messages[0].status == .delivered)
+        #expect(messages[0].txid == txid)
+        #expect(messages[0].pendingMemos == nil)
+    }
+
+    @Test func failedSendNotOnChainStaysFailed() {
+        var messages = [failed([memo(1)])]
+        #expect(!InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(3)])]))
+        #expect(messages[0].status == .failed)
+        #expect(messages[0].pendingMemos == [memo(1)])
+    }
+
+    @Test func otherMessagesAreLeftAlone() {
+        var sent = failed([memo(1)])
+        sent.status = .sent
+        var messages = [sent, ChatMessage.incoming("yo", from: peer)]
+        #expect(!InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(1)])]))
+        #expect(messages[0].status == .sent)
+        #expect(messages[1].status == .received)
+    }
+}
+
 struct WalletSettingsTests {
     @Test func parsesServers() {
         #expect(WalletSettings.Server("zec.rocks") == WalletSettings.Server(host: "zec.rocks", port: 443))

@@ -171,6 +171,23 @@ final class WalletEngine {
         return snapshot
     }
 
+    /// Our own mined transactions, with the 512-byte memos they carried to other wallets.
+    /// Transactions in `known` are skipped. Finds a message whose send was cut short by a lock
+    /// but reached the chain anyway (see `InterruptedSends`).
+    func minedSentMemos(except known: Set<Data>) async throws -> [(txid: Data, memos: [Data])] {
+        guard let sync = synchronizer, let account else { return [] }
+        var found: [(txid: Data, memos: [Data])] = []
+        for tx in try await sync.allTransactions()
+        where tx.accountUUID == account.id && tx.isSentTransaction && tx.minedHeight != nil
+            && !known.contains(tx.rawID) {
+            let outputs = await sync.getTransactionOutputs(for: tx).map(Self.reduce)
+            if let memos = SentMemos.extract(from: outputs), !memos.isEmpty {
+                found.append((tx.rawID, memos))
+            }
+        }
+        return found
+    }
+
     /// A new shielded-only (Orchard) address. Each contact and each invite gets its own, so
     /// contacts can't link you across chats.
     func newAddress() async throws -> String {

@@ -193,6 +193,12 @@ final class ProfileSession {
             errorText = ZignalError.walletNotReady.errorDescription
             return
         }
+        // A send cut short by a lock may have reached the chain after all. Don't pay twice.
+        if await reconcileInterruptedSends() {
+            persist()
+            guard messages.first(where: { $0.id == id })?.status == .failed else { return }
+        }
+        guard !isClosed else { return }
         updateMessage(id) { $0.status = .sending }
         await transmit(id, memos: memos, to: address)
     }
@@ -293,12 +299,26 @@ final class ProfileSession {
                     processedTransactions.removeFirst(processedTransactions.count - Self.maxProcessedTransactions)
                 }
                 if updateDelivery(mined: snapshot.mined, expired: snapshot.expired) { changed = true }
+                if await reconcileInterruptedSends() { changed = true }
+                guard !isClosed else { return }
                 if changed { try save() }
             } catch {
                 report(error)
                 return
             }
         } while refreshAgain && !isClosed
+    }
+
+    /// A send cut short by a lock or a crash shows as failed (see `LoadedProfile.load`), but its
+    /// transaction may have reached the chain anyway. Looks for each failed message's first memo
+    /// among our own mined transactions and marks it delivered. Returns true if any changed.
+    private func reconcileInterruptedSends() async -> Bool {
+        guard let wallet,
+              messages.contains(where: { $0.outgoing && $0.status == .failed && $0.pendingMemos != nil })
+        else { return false }
+        let known = Set(messages.compactMap { $0.status == .failed ? nil : $0.txid })
+        guard let sent = try? await wallet.minedSentMemos(except: known), !isClosed else { return false }
+        return InterruptedSends.reconcile(&messages, minedSent: sent)
     }
 
     /// Marks sent messages delivered once mined, or failed if they expired unmined.
@@ -508,7 +528,8 @@ private struct LoadedProfile: @unchecked Sendable {
                                          stateKey: keys.stateKey, sealedState: saved.inbox)
             demo = restoreDemo(keys: keys, data: &data)
             // A send cut short by a lock or crash may or may not have reached the network.
-            // Show it as failed; sending it again is safe (see `retry`).
+            // Show it as failed; sending it again is safe (see `retry`). Once the wallet sees
+            // it mined, `reconcileInterruptedSends` marks it delivered instead.
             for i in data.messages.indices where data.messages[i].status == .sending {
                 data.messages[i].status = .failed
             }
