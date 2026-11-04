@@ -25,15 +25,19 @@ releases came out on October 21-22, 2026.
   dependencies.
   - Source updates for the new crate APIs: the system random number generator is now passed as
     `UnwrapErr<SysRng>` (rand 0.10), transaction building takes a clock, unified addresses
-    carry a revision, and the encoded unified spending key comes back wrapped as a secret. What
-    the library does is unchanged apart from NU7 itself.
+    carry a revision, the encoded unified spending key comes back wrapped as a secret, and the
+    Sapling key prefixes come from `zcash_keys::constants`. What the library does is unchanged
+    apart from NU7 itself.
   - TLS and HTTP/2: `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `rustls` 0.23.46 or later
     (RUSTSEC-2026-0285, -0346, -0348, -0349) and `h2` 0.4.16 or later (RUSTSEC-2026-0258).
-  - Remaining RustSec advisories in `Cargo.lock` all come in through arti, the Tor client, which
-    Zignal leaves off by default: `zstd` (decompressing Tor directory documents), `rsa` (the
-    Marvin attack targets private-key decryption; a Tor client only verifies signatures) and
-    `crypto-bigint` (SSH key parsing for onion services, which Zignal doesn't use). They clear
-    when arti moves to newer versions.
+  - Patch releases with security fixes: `tokio` 1.53.3 (RUSTSEC-2026-0386), and, used by arti,
+    the Tor client, `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2 (RUSTSEC-2026-0391,
+    -0398, -0403, -0410) and `event-listener` 5.4.2 (RUSTSEC-2026-0221).
+  - The two remaining RustSec advisories in `Cargo.lock` come in through arti, which Zignal
+    leaves off by default, and have no compatible fix: `rsa` (the Marvin attack targets
+    private-key decryption; a Tor client only verifies signatures) and `crypto-bigint` (SSH key
+    parsing for onion services, which Zignal doesn't use). They clear when arti moves to newer
+    versions.
   - EIP-681 parsing and the Orchard-to-Ironwood pool migration are left out; Zignal doesn't use
     them. `rust/src/eip681.rs` and `rust/src/migration.rs` are stubs that
     `Scripts/gen_stubs.py` generates from the upstream files of the same name: same C

@@ -64,7 +64,10 @@ for t in "$DEVICE_TARGET" "$SIM_TARGET"; do
 done
 
 [ -s "$HEADER" ] || fail "the build didn't write $HEADER"
-xcrun clang -fsyntax-only -x c "$HEADER" || fail "$HEADER doesn't compile as C"
+# Checked for this Mac, as plain C. With IPHONEOS_DEPLOYMENT_TARGET set, clang would target iOS
+# with the macOS SDK and warn about the mismatch.
+(unset IPHONEOS_DEPLOYMENT_TARGET; xcrun clang -fsyntax-only -x c "$HEADER") ||
+  fail "$HEADER doesn't compile as C"
 
 needles=("$HOME")
 account="$(id -un)"

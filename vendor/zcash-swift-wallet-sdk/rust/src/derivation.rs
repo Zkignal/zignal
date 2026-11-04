@@ -23,6 +23,11 @@ use zcash_client_backend::{
         UnifiedSpendingKey,
     },
 };
+// Zignal fork: zcash_protocol 0.11 deprecates the `NetworkConstants` methods for Sapling key
+// prefixes; the same prefixes now come from `zcash_keys::constants`.
+use zcash_keys::constants::{
+    hrp_sapling_extended_full_viewing_key, hrp_sapling_extended_spending_key,
+};
 use zcash_protocol::consensus::{NetworkConstants, NetworkType, Parameters};
 use zip32::{ChainCode, ChildIndex, DiversifierIndex, arbitrary, registered::PathElement};
 
@@ -248,10 +253,11 @@ pub unsafe extern "C" fn zcashlc_is_valid_sapling_extended_spending_key(
         let network = parse_network(network_id)?;
         let extsk = unsafe { CStr::from_ptr(extsk).to_str()? };
 
-        Ok(
-            decode_extended_spending_key(network.hrp_sapling_extended_spending_key(), extsk)
-                .is_ok(),
+        Ok(decode_extended_spending_key(
+            hrp_sapling_extended_spending_key(network.network_type()),
+            extsk,
         )
+        .is_ok())
     });
     unwrap_exc_or(res, false)
 }
@@ -265,17 +271,16 @@ pub unsafe extern "C" fn zcashlc_is_valid_sapling_extended_spending_key(
 /// - The memory referenced by `key` must not be mutated for the duration of the function call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zcashlc_is_valid_viewing_key(key: *const c_char, network_id: u32) -> bool {
-    let res =
-        catch_panic(|| {
-            let network = parse_network(network_id)?;
-            let vkstr = unsafe { CStr::from_ptr(key).to_str()? };
+    let res = catch_panic(|| {
+        let network = parse_network(network_id)?;
+        let vkstr = unsafe { CStr::from_ptr(key).to_str()? };
 
-            Ok(decode_extended_full_viewing_key(
-                network.hrp_sapling_extended_full_viewing_key(),
-                vkstr,
-            )
-            .is_ok())
-        });
+        Ok(decode_extended_full_viewing_key(
+            hrp_sapling_extended_full_viewing_key(network.network_type()),
+            vkstr,
+        )
+        .is_ok())
+    });
     unwrap_exc_or(res, false)
 }
 
