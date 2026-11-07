@@ -208,6 +208,34 @@ final class WalletEngine {
         return try await submit(PaymentRequest.memos(memos, to: address))
     }
 
+    /// Sends one of our own transactions again, unchanged: same transaction, no new fee. For a
+    /// message whose first try was refused, lost on the network or cut short by a lock. The
+    /// wallet keeps that transaction until it expires and the SDK resends it every few minutes
+    /// on its own, so building a new one could pay twice (see `ProfileSession.retry`).
+    /// Goes through the SDK's broadcaster, which uses Tor when Tor is on.
+    func resend(txid: Data) async throws {
+        guard let sync = synchronizer else { throw ZignalError.walletNotReady }
+        guard let tx = try await sync.allTransactions().first(where: { $0.rawID == txid }),
+              let raw = tx.raw else {
+            throw ZignalError.sendRejected("The transaction is no longer in the wallet.")
+        }
+        guard tx.minedHeight == nil else { return }
+        let created = CreatedTransaction(txId: tx.rawID, raw: raw, expiryHeight: tx.expiryHeight)
+        let server = settings.servers.first ?? WalletSettings.defaultServers[0]
+        switch await sync.broadcaster.submit(transaction: created, to: [Self.endpoint(server)]) {
+        case .accepted, .timedOut, .cancelled:
+            // Accepted, or possibly on its way: the SDK keeps resending it until it's mined.
+            return
+        case .rejected(_, let message) where message.localizedCaseInsensitiveContains("already"):
+            // The server has it already (from the first try or the SDK's own resend).
+            return
+        case .rejected(_, let message):
+            throw ZignalError.sendRejected(message)
+        case .unreachable, .notAttempted:
+            throw ZignalError.sendRejected("The server couldn't be reached. It will be tried again.")
+        }
+    }
+
     /// Splits the spendable balance into `count` notes by paying ourselves, so several
     /// messages can go out back to back. Each send locks its note until the change has 3
     /// confirmations; with one note, that's one message every few minutes.

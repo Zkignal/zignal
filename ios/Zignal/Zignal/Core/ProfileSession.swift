@@ -185,8 +185,10 @@ final class ProfileSession {
         }
     }
 
-    /// Sends a failed message again with the same encrypted memos. A copy that did reach the
-    /// chain is dropped by the contact's replay protection, so this never shows twice.
+    /// Sends a failed message again with the same encrypted memos. If the wallet still holds
+    /// its transaction from an earlier try, that same transaction goes out again, so it is paid
+    /// for once. A copy that does reach the chain twice is dropped by the contact's replay
+    /// protection, so it never shows twice.
     func retry(_ id: UUID) async {
         guard !isClosed, !retrying.contains(id), let message = messages.first(where: { $0.id == id }),
               message.status == .failed, let memos = message.pendingMemos,
@@ -206,6 +208,31 @@ final class ProfileSession {
             guard messages.first(where: { $0.id == id })?.status == .failed else { return }
         }
         guard !isClosed else { return }
+        // The wallet may still hold this message's transaction from an earlier try (refused,
+        // lost on the network, or cut short by a lock). The SDK resends that one on its own, so a
+        // new transaction could be paid for twice: send the same one again instead.
+        let known = Set(messages.compactMap { $0.status == .failed ? nil : $0.txid })
+        let sent = (try? await wallet.sentMemos(except: known)) ?? []
+        guard !isClosed, messages.first(where: { $0.id == id })?.status == .failed else { return }
+        if let first = memos.first, let copy = InterruptedSends.waitingCopy(of: first, in: sent) {
+            updateMessage(id) { $0.status = .sending }
+            do {
+                try await wallet.resend(txid: copy.txid)
+                updateMessage(id) {
+                    $0.status = .sent
+                    $0.txid = copy.txid
+                    $0.interrupted = nil
+                }
+            } catch {
+                updateMessage(id) {
+                    $0.status = .failed
+                    $0.interrupted = nil
+                }
+                report(error)
+            }
+            if !isClosed { persist() }
+            return
+        }
         updateMessage(id) { $0.status = .sending }
         await transmit(id, memos: memos, to: address)
     }

@@ -268,6 +268,13 @@ enum InterruptedSends {
         }
         return changed
     }
+
+    /// Our transaction still waiting to be mined that carries a message's first memo, if the
+    /// wallet holds one. "Send again" sends that same transaction again instead of a new one:
+    /// the SDK keeps resending it on its own, so a new one could be paid for twice.
+    static func waitingCopy(of firstMemo: Data, in sent: [SentTransaction]) -> SentTransaction? {
+        sent.first { !$0.mined && $0.memos.contains(firstMemo) }
+    }
 }
 
 /// zkw envelopes as they look in a memo. Their header can be read without any key.

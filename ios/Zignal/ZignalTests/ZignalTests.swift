@@ -667,6 +667,16 @@ struct InterruptedSendsTests {
         }
     }
 
+    @Test func sendAgainUsesTheCopyStillWaiting() {
+        let waiting = Data(repeating: 1, count: 32)
+        // Memos come back in output order, which is shuffled: any position counts.
+        let sent = [tx([memo(3)], mined: false), tx([memo(2), memo(1)], mined: false, id: waiting), tx([memo(1)])]
+        #expect(InterruptedSends.waitingCopy(of: memo(1), in: sent)?.txid == waiting)
+        #expect(InterruptedSends.waitingCopy(of: memo(4), in: sent) == nil)
+        // A mined copy is for `reconcile` (delivered), not for sending again.
+        #expect(InterruptedSends.waitingCopy(of: memo(1), in: [tx([memo(1)])]) == nil)
+    }
+
     @Test func failedSendNotInTheWalletStaysFailed() {
         var messages = [failed([memo(1)])]
         #expect(!InterruptedSends.reconcile(&messages, sent: [tx([memo(3)])]))
