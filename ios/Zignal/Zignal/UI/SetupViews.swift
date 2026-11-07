@@ -226,6 +226,8 @@ struct RestorePhraseView: View {
     @State private var created = Date()
     @State private var restored: RestoredProfile?
     @State private var errorText: String?
+    @State private var screenCaptured = false
+    @State private var screenshotTaken = false
 
     /// Sapling activation (2018-10-29). No Zcash shielded wallet can be older.
     private static let earliest = Calendar(identifier: .gregorian)
@@ -238,16 +240,25 @@ struct RestorePhraseView: View {
     var body: some View {
         Form {
             Section {
-                TextField("24 words, separated by spaces", text: $phrase, axis: .vertical)
-                    .lineLimit(4...8)
-                    .keyboardType(.asciiCapable)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .privacySensitive()
+                if screenCaptured {
+                    CapturedScreenNotice()
+                } else {
+                    TextField("24 words, separated by spaces", text: $phrase, axis: .vertical)
+                        .lineLimit(4...8)
+                        .keyboardType(.asciiCapable)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .privacySensitive()
+                }
             } header: {
                 Text("Recovery phrase")
             } footer: {
-                Text("\(wordCount) of 24 words")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(wordCount) of 24 words")
+                    if screenshotTaken {
+                        ScreenshotWarning()
+                    }
+                }
             }
             Section {
                 DatePicker("Created", selection: $created, in: Self.earliest...Date(),
@@ -268,6 +279,10 @@ struct RestorePhraseView: View {
         }
         .navigationTitle("Restore")
         .scrollDismissesKeyboard(.interactively)
+        .background(ScreenCaptureWatcher(isCaptured: $screenCaptured))
+        .onScreenshot {
+            if !screenCaptured && !phrase.isEmpty { screenshotTaken = true }
+        }
         .navigationDestination(item: $restored) { restore in
             PinSetupView(restore: restore)
         }

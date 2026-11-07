@@ -10,6 +10,8 @@ struct RecoveryPhraseView: View {
     @State private var words: [String] = []
     @State private var errorText: String?
     @State private var checking = false
+    @State private var screenCaptured = false
+    @State private var screenshotTaken = false
     @FocusState private var focused: Bool
 
     init(session: ProfileSession) {
@@ -81,7 +83,17 @@ struct RecoveryPhraseView: View {
     private var phrase: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PhraseGrid(words: words)
+                if screenCaptured {
+                    CapturedScreenNotice()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.quaternary, in: .rect(cornerRadius: 12))
+                } else {
+                    PhraseGrid(words: words)
+                }
+                if screenshotTaken {
+                    ScreenshotWarning()
+                }
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Write these 24 words on paper, in order.", systemImage: "pencil")
                     Label("Never photograph them or store them online.", systemImage: "eye.slash")
@@ -95,6 +107,10 @@ struct RecoveryPhraseView: View {
             .padding()
         }
         .privacySensitive()
+        .background(ScreenCaptureWatcher(isCaptured: $screenCaptured))
+        .onScreenshot {
+            if !screenCaptured { screenshotTaken = true }
+        }
     }
 
     private func check() async {
