@@ -69,6 +69,9 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     /// The encrypted memos, kept until the message is delivered so a failed send can be
     /// retried without advancing the ratchet again (outgoing only).
     var pendingMemos: [Data]?
+    /// True for a failed message whose send was cut short by a lock or a crash, so nobody knows
+    /// whether its transaction went out. Nil once a send has a known outcome.
+    var interrupted: Bool?
 
     static func outgoing(_ text: String, to peer: Data, memos: Int) -> ChatMessage {
         ChatMessage(id: UUID(), peer: peer, outgoing: true, text: text, date: Date(),

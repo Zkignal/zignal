@@ -171,18 +171,19 @@ final class WalletEngine {
         return snapshot
     }
 
-    /// Our own mined transactions, with the 512-byte memos they carried to other wallets.
-    /// Transactions in `known` are skipped. Finds a message whose send was cut short by a lock
-    /// but reached the chain anyway (see `InterruptedSends`).
-    func minedSentMemos(except known: Set<Data>) async throws -> [(txid: Data, memos: [Data])] {
+    /// Our own transactions that are mined or still waiting to be mined (expired ones are left
+    /// out), with the 512-byte memos they carried to other wallets. Transactions in `known` are
+    /// skipped. Finds a message whose send was cut short by a lock but whose transaction the
+    /// wallet made anyway (see `InterruptedSends`).
+    func sentMemos(except known: Set<Data>) async throws -> [SentTransaction] {
         guard let sync = synchronizer, let account else { return [] }
-        var found: [(txid: Data, memos: [Data])] = []
+        var found: [SentTransaction] = []
         for tx in try await sync.allTransactions()
-        where tx.accountUUID == account.id && tx.isSentTransaction && tx.minedHeight != nil
-            && !known.contains(tx.rawID) {
+        where tx.accountUUID == account.id && tx.isSentTransaction && !known.contains(tx.rawID)
+            && tx.state != .expired && tx.isExpiredUmined != true {
             let outputs = await sync.getTransactionOutputs(for: tx).map(Self.reduce)
             if let memos = SentMemos.extract(from: outputs), !memos.isEmpty {
-                found.append((tx.rawID, memos))
+                found.append(SentTransaction(txid: tx.rawID, memos: memos, mined: tx.minedHeight != nil))
             }
         }
         return found

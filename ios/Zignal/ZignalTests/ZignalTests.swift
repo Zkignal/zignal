@@ -614,24 +614,62 @@ struct InterruptedSendsTests {
         Data([0xFF, byte]) + Data(count: 510)
     }
 
-    private func failed(_ memos: [Data]) -> ChatMessage {
+    private func failed(_ memos: [Data], interrupted: Bool = true) -> ChatMessage {
         var message = ChatMessage.outgoing("hi", to: peer, memos: memos.count)
         message.status = .failed
         message.pendingMemos = memos
+        message.interrupted = interrupted ? true : nil
         return message
     }
 
-    @Test func failedSendFoundOnChainIsDelivered() {
-        var messages = [failed([memo(1), memo(2)])]
-        #expect(InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(1), memo(2)])]))
-        #expect(messages[0].status == .delivered)
-        #expect(messages[0].txid == txid)
-        #expect(messages[0].pendingMemos == nil)
+    private func tx(_ memos: [Data], mined: Bool = true, id: Data? = nil) -> SentTransaction {
+        SentTransaction(txid: id ?? txid, memos: memos, mined: mined)
     }
 
-    @Test func failedSendNotOnChainStaysFailed() {
+    @Test func failedSendFoundOnChainIsDelivered() {
+        // Mined proves it went out, however the send ended.
+        for interrupted in [true, false] {
+            var messages = [failed([memo(1), memo(2)], interrupted: interrupted)]
+            #expect(InterruptedSends.reconcile(&messages, sent: [tx([memo(1), memo(2)])]))
+            #expect(messages[0].status == .delivered)
+            #expect(messages[0].txid == txid)
+            #expect(messages[0].pendingMemos == nil)
+            #expect(messages[0].interrupted == nil)
+        }
+    }
+
+    @Test func interruptedSendStillWaitingToBeMinedIsSent() {
         var messages = [failed([memo(1)])]
-        #expect(!InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(3)])]))
+        #expect(InterruptedSends.reconcile(&messages, sent: [tx([memo(1)], mined: false)]))
+        #expect(messages[0].status == .sent)
+        #expect(messages[0].txid == txid)
+        #expect(messages[0].interrupted == nil)
+        // Kept in case it expires: it then fails again and can be sent once more.
+        #expect(messages[0].pendingMemos == [memo(1)])
+    }
+
+    @Test func refusedSendStaysReadyToSendAgain() {
+        // A send the server refused leaves an unbroadcast transaction in the wallet.
+        var messages = [failed([memo(1)], interrupted: false)]
+        #expect(!InterruptedSends.reconcile(&messages, sent: [tx([memo(1)], mined: false)]))
+        #expect(messages[0].status == .failed)
+        #expect(messages[0].pendingMemos == [memo(1)])
+    }
+
+    @Test func minedCopyWinsOverOneStillWaiting() {
+        let waiting = Data(repeating: 1, count: 32)
+        for order in [[tx([memo(1)]), tx([memo(1)], mined: false, id: waiting)],
+                      [tx([memo(1)], mined: false, id: waiting), tx([memo(1)])]] {
+            var messages = [failed([memo(1)])]
+            #expect(InterruptedSends.reconcile(&messages, sent: order))
+            #expect(messages[0].status == .delivered)
+            #expect(messages[0].txid == txid)
+        }
+    }
+
+    @Test func failedSendNotInTheWalletStaysFailed() {
+        var messages = [failed([memo(1)])]
+        #expect(!InterruptedSends.reconcile(&messages, sent: [tx([memo(3)])]))
         #expect(messages[0].status == .failed)
         #expect(messages[0].pendingMemos == [memo(1)])
     }
@@ -640,9 +678,48 @@ struct InterruptedSendsTests {
         var sent = failed([memo(1)])
         sent.status = .sent
         var messages = [sent, ChatMessage.incoming("yo", from: peer)]
-        #expect(!InterruptedSends.reconcile(&messages, minedSent: [(txid, [memo(1)])]))
+        #expect(!InterruptedSends.reconcile(&messages, sent: [tx([memo(1)])]))
         #expect(messages[0].status == .sent)
         #expect(messages[1].status == .received)
+    }
+}
+
+struct IncomingReadingTests {
+    private func envelope(type: UInt8) -> Data {
+        Data([0xFF, 0x5A, 0x57, 0x02, type]) + Data(count: 507)
+    }
+
+    private let textMemo = Data("Thanks for lunch".utf8) + Data(count: 496)
+
+    @Test func recognizesZkwEnvelopes() {
+        #expect(ZkwMemo.isEnvelope(envelope(type: 0x10)))
+        #expect(ZkwMemo.opensChat(envelope(type: 0x03)))
+        #expect(!ZkwMemo.opensChat(envelope(type: 0x10)))
+        #expect(!ZkwMemo.isEnvelope(textMemo))
+        #expect(!ZkwMemo.isEnvelope(Data([0xFF, 0x5A, 0x57, 0x01]) + Data(count: 508))) // another version
+        #expect(!ZkwMemo.isEnvelope(Data([0xFF, 0x5A, 0x57, 0x02, 0x03]))) // not 512 bytes
+    }
+
+    @Test func chatOpeningTransactionsAreReadFirst() {
+        let message = [envelope(type: 0x10)]
+        let opening = [envelope(type: 0x03), envelope(type: 0x03)]
+        #expect(IncomingReading.order([message, opening, [textMemo], opening]) == [1, 3, 0, 2])
+        #expect(IncomingReading.order([]) == [])
+    }
+
+    @Test func unreadableZkwTransactionsAreTriedAgainForTwoDays() {
+        let zkw = [envelope(type: 0x10)]
+        let sent: UInt64 = 1_790_000_000
+        #expect(IncomingReading.isDone(read: true, complete: false, memos: zkw, sentAt: sent, now: sent))
+        // Before the wallet has scanned every block, nothing unread is set aside.
+        #expect(!IncomingReading.isDone(read: false, complete: false, memos: [textMemo], sentAt: sent, now: sent))
+        // Memos that aren't zkw envelopes will never be readable.
+        #expect(IncomingReading.isDone(read: false, complete: true, memos: [textMemo], sentAt: sent, now: sent))
+        #expect(!IncomingReading.isDone(read: false, complete: true, memos: zkw, sentAt: sent, now: sent + 3_600))
+        #expect(IncomingReading.isDone(read: false, complete: true, memos: zkw, sentAt: sent,
+                                       now: sent + IncomingReading.retryWindow + 1))
+        // A block time a little ahead of the phone's clock doesn't count as old.
+        #expect(!IncomingReading.isDone(read: false, complete: true, memos: zkw, sentAt: sent + 600, now: sent))
     }
 }
 
@@ -878,6 +955,7 @@ struct WalletSessionTests {
         let session = try await ProfileSession.open(keys: keys, store: store)
         let reloaded = try #require(session.messages.first)
         #expect(reloaded.status == .failed)
+        #expect(reloaded.interrupted == true)
         #expect(reloaded.pendingMemos == memos)
         #expect(try store.load(keys)?.messages.first?.status == .failed)
     }

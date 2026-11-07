@@ -47,6 +47,8 @@ final class ProfileSession {
     @ObservationIgnored private var processedTransactions: [Data]
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
+    /// Messages being sent again right now, so a second tap can't send them twice.
+    @ObservationIgnored private var retrying: Set<UUID> = []
 
     private init(_ loaded: LoadedProfile) {
         keys = loaded.keys
@@ -186,14 +188,19 @@ final class ProfileSession {
     /// Sends a failed message again with the same encrypted memos. A copy that did reach the
     /// chain is dropped by the contact's replay protection, so this never shows twice.
     func retry(_ id: UUID) async {
-        guard !isClosed, let message = messages.first(where: { $0.id == id }),
+        guard !isClosed, !retrying.contains(id), let message = messages.first(where: { $0.id == id }),
               message.status == .failed, let memos = message.pendingMemos,
               let address = try? inbox.contactAddress(peer: message.peer) else { return }
         guard let wallet, wallet.canTransact else {
             errorText = ZignalError.walletNotReady.errorDescription
             return
         }
-        // A send cut short by a lock may have reached the chain after all. Don't pay twice.
+        // The check below waits for the wallet, and the message still shows "Not sent" until
+        // it's done: a second tap in that time must not send it a second time.
+        retrying.insert(id)
+        defer { retrying.remove(id) }
+        // A send cut short by a lock may have reached the wallet or the chain after all.
+        // Don't pay twice.
         if await reconcileInterruptedSends() {
             persist()
             guard messages.first(where: { $0.id == id })?.status == .failed else { return }
@@ -215,9 +222,14 @@ final class ProfileSession {
             updateMessage(id) {
                 $0.status = .sent
                 $0.txid = txid
+                $0.interrupted = nil
             }
         } catch {
-            updateMessage(id) { $0.status = .failed }
+            // The server or the wallet said no, so this send didn't go out.
+            updateMessage(id) {
+                $0.status = .failed
+                $0.interrupted = nil
+            }
             report(error)
         }
         if !isClosed { persist() }
@@ -277,7 +289,14 @@ final class ProfileSession {
                 let snapshot = try await wallet.snapshot(skipping: Set(processedTransactions))
                 guard !isClosed else { return }
                 var changed = false
-                for item in snapshot.incoming where !processedTransactions.contains(item.txid) {
+                let incoming = snapshot.incoming
+                let now = unixNow()
+                // A chat's first message before anything else, so a second message sent right
+                // after it is readable in the same pass, whatever order the wallet lists them in.
+                let order = IncomingReading.order(incoming.map { $0.memos })
+                for index in order {
+                    let item = incoming[index]
+                    guard !processedTransactions.contains(item.txid) else { continue }
                     // Read at the time it was sent, not now: the core matches each message to
                     // its chat by a tag that changes daily, so a message read days later
                     // would otherwise be dropped.
@@ -288,10 +307,11 @@ final class ProfileSession {
                             read = true
                         }
                     }
-                    // Until the wallet has scanned every block, a transaction with nothing
-                    // readable may be a reply whose first message hasn't been found yet. It is
-                    // read again on the next pass instead of being set aside.
-                    guard read || snapshot.complete else { continue }
+                    // A transaction with zkw memos that can't be read yet may be a message whose
+                    // chat hasn't been opened yet. It is read again on later passes instead of
+                    // being set aside (see `IncomingReading`).
+                    guard IncomingReading.isDone(read: read, complete: snapshot.complete, memos: item.memos,
+                                                 sentAt: item.time, now: now) else { continue }
                     processedTransactions.append(item.txid)
                     changed = true
                 }
@@ -310,15 +330,16 @@ final class ProfileSession {
     }
 
     /// A send cut short by a lock or a crash shows as failed (see `LoadedProfile.load`), but its
-    /// transaction may have reached the chain anyway. Looks for each failed message's first memo
-    /// among our own mined transactions and marks it delivered. Returns true if any changed.
+    /// transaction may have been made and broadcast anyway. Looks for each failed message's
+    /// first memo among our own transactions: mined ones mark it delivered, ones still waiting to
+    /// be mined mark it sent. Returns true if any changed.
     private func reconcileInterruptedSends() async -> Bool {
         guard let wallet,
               messages.contains(where: { $0.outgoing && $0.status == .failed && $0.pendingMemos != nil })
         else { return false }
         let known = Set(messages.compactMap { $0.status == .failed ? nil : $0.txid })
-        guard let sent = try? await wallet.minedSentMemos(except: known), !isClosed else { return false }
-        return InterruptedSends.reconcile(&messages, minedSent: sent)
+        guard let sent = try? await wallet.sentMemos(except: known), !isClosed else { return false }
+        return InterruptedSends.reconcile(&messages, sent: sent)
     }
 
     /// Marks sent messages delivered once mined, or failed if they expired unmined.
@@ -528,10 +549,11 @@ private struct LoadedProfile: @unchecked Sendable {
                                          stateKey: keys.stateKey, sealedState: saved.inbox)
             demo = restoreDemo(keys: keys, data: &data)
             // A send cut short by a lock or crash may or may not have reached the network.
-            // Show it as failed; sending it again is safe (see `retry`). Once the wallet sees
-            // it mined, `reconcileInterruptedSends` marks it delivered instead.
+            // Show it as failed; sending it again is safe (see `retry`). Once the wallet shows
+            // its transaction, `reconcileInterruptedSends` marks it sent or delivered instead.
             for i in data.messages.indices where data.messages[i].status == .sending {
                 data.messages[i].status = .failed
+                data.messages[i].interrupted = true
             }
         } else {
             // No file for this profile on this device (for example after restoring a device

@@ -227,28 +227,86 @@ enum SentMemos {
     }
 }
 
+/// One of our own transactions, with the 512-byte memos it carried to other wallets.
+struct SentTransaction: Equatable {
+    let txid: Data
+    let memos: [Data]
+    /// In a block. Otherwise it is still waiting to be mined and hasn't expired.
+    let mined: Bool
+}
+
 /// Sends cut short by a lock or a crash. `LoadedProfile.load` shows them as failed because it
-/// can't know whether their transaction reached the network. This finds the ones that did, so
-/// they aren't paid for twice.
+/// can't know whether their transaction reached the network. This finds the ones the wallet
+/// holds, so they aren't paid for twice.
 enum InterruptedSends {
-    /// Marks failed outgoing messages delivered when one of our mined transactions carried
-    /// their first memo. Only mined transactions count: an unmined one may never have been
-    /// broadcast. Returns true if any message changed.
-    static func reconcile(_ messages: inout [ChatMessage],
-                          minedSent: [(txid: Data, memos: [Data])]) -> Bool {
-        var txidByMemo: [Data: Data] = [:]
-        for tx in minedSent {
-            for memo in tx.memos { txidByMemo[memo] = tx.txid }
+    /// For each failed outgoing message whose first memo one of our transactions carried:
+    /// - a mined transaction marks it delivered;
+    /// - one still waiting to be mined marks it sent, but only if the send was interrupted. A
+    ///   send the server refused also leaves an unbroadcast transaction in the wallet, and that
+    ///   message must stay ready to send again.
+    /// A sent message then turns delivered once mined, or failed again if it expires, and
+    /// keeps its memos for that case. Returns true if any message changed.
+    static func reconcile(_ messages: inout [ChatMessage], sent: [SentTransaction]) -> Bool {
+        var byMemo: [Data: SentTransaction] = [:]
+        for tx in sent {
+            // A mined copy wins over one still waiting (a message sent twice).
+            for memo in tx.memos where byMemo[memo]?.mined != true { byMemo[memo] = tx }
         }
         var changed = false
         for i in messages.indices where messages[i].outgoing && messages[i].status == .failed {
-            guard let first = messages[i].pendingMemos?.first, let txid = txidByMemo[first] else { continue }
-            messages[i].status = .delivered
-            messages[i].txid = txid
-            messages[i].pendingMemos = nil
+            guard let first = messages[i].pendingMemos?.first, let tx = byMemo[first],
+                  tx.mined || messages[i].interrupted == true else { continue }
+            messages[i].txid = tx.txid
+            messages[i].interrupted = nil
+            if tx.mined {
+                messages[i].status = .delivered
+                messages[i].pendingMemos = nil
+            } else {
+                messages[i].status = .sent
+            }
             changed = true
         }
         return changed
+    }
+}
+
+/// zkw envelopes as they look in a memo. Their header can be read without any key.
+enum ZkwMemo {
+    /// The memo starts like a zkw envelope of protocol v0.3: 0xFF, "ZW", version 2.
+    static func isEnvelope(_ memo: Data) -> Bool {
+        memo.count == 512 && memo.starts(with: [0xFF, 0x5A, 0x57, 0x02])
+    }
+
+    /// The envelope is a chat's first message (type INIT).
+    static func opensChat(_ memo: Data) -> Bool {
+        isEnvelope(memo) && memo[memo.startIndex + 4] == 0x03
+    }
+}
+
+/// In what order received transactions are read, and when one is finished with.
+///
+/// A contact can send a second message before their first is mined. The wallet may then list
+/// the second one first, and it can only be read once the first has opened the chat.
+enum IncomingReading {
+    /// How long a transaction with zkw memos that can't be read yet keeps being tried.
+    static let retryWindow: UInt64 = 2 * 86_400
+
+    /// Indexes into `memos` (one list per transaction): transactions that open a chat first,
+    /// otherwise in the order given.
+    static func order(_ memos: [[Data]]) -> [Int] {
+        let opens = memos.map { $0.contains(where: ZkwMemo.opensChat) }
+        return memos.indices.filter { opens[$0] } + memos.indices.filter { !opens[$0] }
+    }
+
+    /// Whether a transaction is finished with, so it isn't read again. One with zkw memos that
+    /// couldn't be read is tried again for `retryWindow` after it was sent (`sentAt`, its block
+    /// time): the message that opens its chat may still be on its way.
+    static func isDone(read: Bool, complete: Bool, memos: [Data], sentAt: UInt64, now: UInt64) -> Bool {
+        if read { return true }
+        // Until the wallet has scanned every block, anything may still be missing.
+        guard complete else { return false }
+        guard memos.contains(where: ZkwMemo.isEnvelope) else { return true }
+        return now > sentAt && now - sentAt > retryWindow
     }
 }
 
