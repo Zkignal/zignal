@@ -159,7 +159,7 @@ struct AddFundsView: View {
                     } else {
                         ProgressView()
                     }
-                    Text("Send ZEC from any wallet that supports shielded (Orchard) addresses. It can be spent after 10 confirmations: about 12 minutes today, about 4 after NU7. Start small: a few hundred messages cost about 0.03 ZEC.")
+                    Text("Send ZEC from any wallet that supports shielded (Orchard) addresses. It can be spent after 10 confirmations, about 4 minutes. Start small: a few hundred messages cost about 0.03 ZEC.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
