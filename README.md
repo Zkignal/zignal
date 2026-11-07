@@ -10,6 +10,43 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
 
 > **Status:** experimental, built for the Zecathon (October 2026). Not audited.
 > It runs on Zcash mainnet with real ZEC, so use small amounts.
+>
+> **You are reading the `dev` branch.** It is ahead of the Zecathon submission (`main`, tag
+> `zecathon-final`): it supports NU7 and has the fixes listed in
+> [This branch](#this-branch-dev) below.
+
+## This branch (`dev`)
+
+| Branch | What it holds |
+|---|---|
+| `main` | The Zecathon submission, tag `zecathon-final` (October 28, 2026). It stays as submitted until judging ends. |
+| `nu7` | `zecathon-final` plus only the SDK update for NU7 (nothing in the app changes) and its README. Tagged `zecathon-nu7` after testing on mainnet past NU7 activation. |
+| `dev` | Where work continues: the same SDK as `nu7`, plus app fixes. Tested releases move to `main` later. |
+
+What `dev` changes compared with `main`, newest first:
+
+| Date | Change | Why | Commits |
+|---|---|---|---|
+| Nov 7 | **Sending and receiving are more robust.** A contact's second message is no longer lost when it arrives before their first. A send cut short by a lock shows "sent" while its transaction waits to be mined, instead of "Not sent". "Tap to send again" can't send a message twice when tapped twice. | A new contact's early messages could be dropped when the wallet listed them before the message that opened the chat. Tapping "send again" too early or twice paid a second fee. | `3a78a62` |
+| Nov 4 | **Security updates in the SDK's Rust dependencies:** `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2, `tokio` 1.53.3 and `event-listener` 5.4.2, all patch releases. The SDK library now builds with no compiler warnings. | Fixes RustSec advisories RUSTSEC-2026-0391, -0398, -0403, -0410, -0386 and -0221. Two advisories remain, through the Tor client, with no compatible fix yet (see [Security notes](#security-notes-and-known-limitations)). | `a10e69c` |
+| Nov 3 | **Interrupted sends are no longer shown as failed.** If you lock the app while a message is sending, it shows "Not sent" at first. Once the wallet sees that message's transaction in a block, the message turns "delivered" by itself. "Tap to send again" checks this first. | Locking mid-send used to leave a "Not sent" message that had in fact gone out. Sending it again cost a second fee. | `5c173ee` |
+| Nov 1 | **NU7 support.** The SDK's Rust library (`libzcashlc`) is now built from source on librustzcash's NU7 releases (`zcash_protocol` 0.11, `zcash_client_backend` 0.25, `zcash_client_sqlite` 0.23, `orchard` 0.16). Before, it was ECC's prebuilt 3.0.0 binary. | The 3.0.0 binary has no NU7 mainnet height. After block 3,543,405 it would use the wrong consensus branch ID: syncing stops and its transactions are invalid. ECC's SDK gets no NU7 release, so Zignal maintains its own fork. | `829ecb0` `f66c1c3` |
+| Nov 1 | **Smaller SDK:** EIP-681 payment links and the Orchard-to-Ironwood pool migration are left out of the library. Stubs keep the same C declarations, so the Swift code is unchanged. | Zignal uses neither feature. About 13,000 lines of upstream code are no longer compiled. | `829ecb0` |
+| Nov 1 | **Updated TLS libraries** for connections made from Rust (Tor): `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `h2` 0.4.20. | These versions stop trusting the eight compromised eMudhra intermediate CAs disclosed on October 20, 2026, and fix RustSec advisories in `rustls` and `h2`. | `829ecb0` |
+| Nov 1 | **The build keeps the builder out of the library.** File paths from the build machine are removed, and the build stops if any remain. The library targets iOS 17.0, the app's minimum. | By default, Rust and C compilers embed source file paths in a library, including the builder's home folder, and from there they end up in the app. | `f66c1c3` |
+| Oct 29 | **Prepare** (formerly "Prepare for chatting") splits your balance only when it helps. It estimates how many messages can go out back to back from the last split. It waits while recent messages' change confirms, instead of splitting again. The button shows Ready, Confirming or Prepare, with one line saying why. | Before, the app could suggest splitting again when it didn't need to, and the long label wrapped onto two lines. | `04cd9fd` `cde5a42` |
+
+Tested on `dev` (November 1 to 4, iPhone, Zcash mainnet):
+- existing wallets upgraded to the new wallet database and kept syncing;
+- messages both ways with Tor on and off;
+- Add funds and Prepare;
+- three interrupted sends, each delivered without a second fee.
+
+76 app tests and 2 UI tests pass.
+
+> **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
+> database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
+> phrases: they restore the wallets in any build.
 
 ## Screenshots
 
@@ -48,9 +85,12 @@ and wallet, its side of the same conversation, and its wallet syncing.
 - **Invites:** show a single-use QR code on one phone, scan or paste it on the other, and send
   a first message. Each contact gets a fresh shielded address.
 - **Delivery status:** sending, sent, delivered (in a block), or not sent, with tap to resend.
-- **Wallet:** balance and sync status, Add funds (QR code of a shielded address), "Prepare for
-  chatting" (splits the balance so several messages can go out in a row), and network
-  settings (server list and a Tor switch).
+  A send cut short by locking the app shows sent while its transaction waits, then delivered
+  once it's in a block.
+- **Wallet:** balance and sync status, Add funds (QR code of a shielded address), Prepare
+  (splits the balance so several messages can go out in a row, only when that helps), and
+  network settings (server list and a Tor switch).
+- **NU7 ready:** the wallet library is built from source on the NU7 releases of librustzcash.
 - **Messaging core (Rust):** memo envelope, hybrid post-quantum handshake, Double Ratchet,
   inbox, replay protection, encrypted save and restore, three-PIN vault. Checked byte for byte
   against an independent Python reference.
@@ -95,7 +135,8 @@ that's on the roadmap.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
   protocol without touching the network.
 - **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
-  with delivery status, safety numbers, Tor on and off.
+  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 4
+  (see [This branch](#this-branch-dev)).
 
 ## Repository layout
 
@@ -106,7 +147,7 @@ that's on the roadmap.
 | `zkw-ffi/` | Swift bindings for `zkw-core` (UniFFI) and the iOS XCFramework build script |
 | `ios/Zignal/` | SwiftUI iOS app: `Core/` (storage, vault, sessions, wallet), `UI/` (screens), `Generated/` (bindings) |
 | `ios/Zignal/scripts/` | Downloads and hash-checks the Zcash Sapling parameters bundled into the app |
-| `vendor/zcash-swift-wallet-sdk/` | Zcash Swift SDK 3.0.0 (MIT) with two fixes, see `ZIGNAL-PATCHES.md` there |
+| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code, and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
 
 ## Protocol at a glance
 
@@ -147,8 +188,12 @@ that's on the roadmap.
   the app, including your own. Tor is off by default and can be switched on per profile.
 - **Sapling parameters** are bundled in the app and checked against pinned hashes at build
   time, so the app never downloads them.
-- **Patched SDK:** the app builds against a copy of the Zcash Swift SDK 3.0.0 in `vendor/`,
-  with the same prebuilt Rust library as the release. It fixes two bugs in the released SDK
+- **NU7:** the SDK's Rust library is built from source on librustzcash's NU7 releases, so the
+  wallet follows the network upgrade at block 3,543,405. From NU7 it builds version 6
+  transactions with a 120-block expiry, and addresses stay revision-0 `u1…` addresses. EIP-681
+  parsing and the pool migration, which Zignal doesn't use, are left out.
+- **Patched SDK:** the app builds against Zignal's fork of the Zcash Swift SDK 3.0.0 in
+  `vendor/`. Its Swift code fixes two bugs in the released SDK
   that kept a locked wallet working in the background until the app was closed: stopping a
   wallet while it was syncing could be undone by the SDK's own retry timer, and every sync
   started another mempool watcher that stopping didn't end (each kept a server connection
@@ -220,18 +265,31 @@ cd zkw-ffi && ./build-ios.sh
 
 # Zcash Sapling parameters (about 51 MB from download.z.cash, size and hash checked)
 bash ios/Zignal/scripts/fetch-sapling-params.sh
+
+# The Zcash SDK's Rust library (libzcashlc) for iPhone and the Simulator, on dev and nu7.
+# Needs Rust 1.97 or newer. The first build downloads the crates and takes a few minutes.
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim   # Intel Mac: x86_64-apple-ios
+vendor/zcash-swift-wallet-sdk/Scripts/build-ios-ffi.sh
 ```
 
+`build-ios-ffi.sh` installs the library in `vendor/zcash-swift-wallet-sdk/LocalPackages/`
+(git-ignored), which the SDK's `Package.swift` links. There is no fallback to ECC's prebuilt
+binary, which stops working at NU7: without this step, Xcode reports the missing library.
+Run it again after pulling changes to `vendor/`.
+
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 56 app tests: PIN rules and the wrong-PIN wait, storage encryption and
-  tamper checks, the three-PIN vault (duress and panic), what a silent wipe leaves behind,
-  recovery phrases, demo chat across restarts, payment request encoding and address checks,
-  invite parsing against a real invite from the core, copying an invite as text, memo
-  filtering, wallet settings and messages, waiting for stopped wallets, and a timing test for
-  each unlock step.
-- The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its
-  dependencies (grpc-swift, SQLite.swift) and the SDK's prebuilt Rust library, checked
-  against the checksum in its `Package.swift`.
+- Cmd+U runs the 76 app tests and the 2 UI tests. They cover:
+  - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
+    test for each unlock step;
+  - storage encryption and tamper checks, and what a silent wipe leaves behind;
+  - recovery phrases, and the demo chat across restarts;
+  - payment request encoding and address checks, invite parsing against a real invite from
+    the core, and copying an invite as text;
+  - memo filtering, wallet settings and messages, and waiting for stopped wallets;
+  - when Prepare splits or waits, interrupted sends found in the wallet, and reading a chat's
+    first message before the rest.
+- The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
+  dependencies (grpc-swift, SQLite.swift).
 - Cmd+R runs the app. The wallet connects to the first server in its list.
 
 ## Security notes and known limitations
@@ -245,11 +303,26 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   SDK's Tor covers sending and fetching; downloading blocks still connects directly. Your own
   server removes the third party entirely.
 - **Tor and certificates:** with Tor on, the server's certificate is checked by the Zcash SDK's
-  own code, not by iOS. In SDK 3.0.0 that check still trusts eight certificate authorities
-  whose keys leaked in October 2026 (iOS itself already blocks them, so Tor off is not
-  affected). Someone holding one of those keys and sitting between Tor and the server could
-  pose as the server: see which transactions you fetch, hide or fake server data, block sends.
-  They can't take funds or read messages. SDK 4.0.0 fixes this; the NU7 update below moves to it.
+  own code, not by iOS. The Zecathon build (`main`, SDK 3.0.0) still trusts eight certificate
+  authorities whose keys leaked in October 2026. iOS itself already blocks them, so Tor off
+  is not affected. Someone holding one of those keys and sitting between Tor and the server
+  could pose as the server: see which transactions you fetch, hide or fake server data, block
+  sends. They can't take funds or read messages. **Fixed on `dev` and `nu7`**, which use
+  `rustls-webpki` 0.103.16 and `webpki-roots` 1.0.11.
+- **A send cut short by a lock:** if the wallet already made its transaction, the message
+  shows "sent" until it's mined. If the lock came in the moment after the transaction was
+  made but before it went out, the message shows "sent" until the transaction expires (about
+  50 minutes), then "Not sent" with tap to send again.
+- **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
+  actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
+  would hide it at a higher fee; that's on the roadmap.
+- **Remaining RustSec advisories** in the SDK's dependencies, both through arti (the Tor
+  client, off by default), with no compatible fix yet:
+  - `rsa`: the Marvin attack targets private-key decryption; a Tor client only verifies
+    signatures;
+  - `crypto-bigint`: used for SSH key parsing for onion services, which Zignal doesn't use.
+
+  Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Open app only:** messages arrive while the app is unlocked and synced. There are no push
   notifications, which would need a Zignal server.
 - **Cost and delay:** each message costs a normal network fee and arrives after about one block
@@ -286,20 +359,27 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   Double Ratchet applies.
 - **Unused invites** stay valid for about three weeks, and whoever uses one first becomes that
   contact. Compare safety numbers before trusting a chat.
-- **NU7:** NU7 activates on mainnet at block 3,543,405 (around November 5, 2026). The Zcash
-  Swift SDK this app is built on (3.0.0) can't send after that. ECC's SDK ends support at
-  NU7: its final release, 4.0.0, doesn't include NU7, and development continues in the ZODL
-  Swift Wallet SDK (AGPLv3). Because Zignal keeps its own patched copy in `vendor/`, it can
-  update it itself. A compatibility-only update, changing just the SDK in `vendor/` and the
-  code needed to build against it, will be tagged `zecathon-nu7` and pushed to TestFlight:
-  either 4.0.0 with Zignal's two fixes and NU7 support added, or the ZODL SDK, decided before
-  activation. The Zecathon submission is the `zecathon-final` tag.
+- **NU7:** NU7 activates on mainnet at block 3,543,405 (around November 5, 2026).
+  - The Zecathon build (`main`, `zecathon-final`) uses SDK 3.0.0's prebuilt library, so it
+    stops syncing and can't send after that.
+  - ECC's SDK ends support at NU7. Its final release, 4.0.0, doesn't include NU7, and
+    development continues in the ZODL Swift Wallet SDK (AGPLv3).
+  - Zignal chose to keep its own MIT fork in `vendor/`: SDK 3.0.0's Swift code with Zignal's
+    two fixes, and its Rust layer rebuilt on librustzcash's NU7 releases.
+  - That update is on `nu7`, changing only the SDK in `vendor/` (and the README), and on
+    `dev`. It is tagged `zecathon-nu7` and was tested on mainnet after activation.
+  - The light server you use must also run NU7-ready software (Zebra 7.0.0 or later) by the
+    activation block, or syncing stops until it does.
 
 ## Roadmap (after the Zecathon)
 
 - **TestFlight**, once the Apple Developer account is approved.
-- **NU7 compatibility:** an SDK-only update before activation, tagged `zecathon-nu7` (see
-  Security notes: ECC's SDK ends at NU7, so Zignal updates its own copy in `vendor/`).
+- **NU7 compatibility:** done on `nu7` and `dev`, tagged `zecathon-nu7` after testing past
+  activation (see [This branch](#this-branch-dev)).
+- **Length privacy:** an option to pad messages to fixed memo counts, so the fee doesn't show
+  how long a message was.
+- **Prebuilt SDK library:** publish the built library with each release, so building the app
+  doesn't need Rust.
 - **Notes from other wallets:** show the text memos that other wallets attach to the ZEC they
   send you, read-only and labelled "sender not verified", with no links.
 - **Send to other shielded wallets**, with a plain memo.
@@ -315,8 +395,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 
 ## Development log
 
-All code in this repository was written during the Zecathon build window. Dates match the
-git history.
+Zignal's own code up to `zecathon-final` was written during the Zecathon build window. Dates
+match the git history; the rows after October 28 are on `dev`.
 
 | Date | Commit | Milestone |
 |---|---|---|
@@ -333,6 +413,12 @@ git history.
 | 2026-10-26 | `6793b8c` `7b350bf` | Wallets really stop on lock: Zcash SDK 3.0.0 vendored in `vendor/` with two stop bugs fixed; the panic PIN waits for stopped wallets and also removes the SDK's settings for the wiped wallet |
 | 2026-10-26 | `2b0b86d` `eb7b148` | README for the patched SDK and the three-PIN vault; MIT OR Apache-2.0 license files |
 | 2026-10-27 | `5ec04bb` | Pasting invites works (copied as UTF-8 text), Paste comes first on the add-contact screen, clearer wallet messages |
+| 2026-10-28 | `462335c` | Zecathon submission (`zecathon-final`) |
+| 2026-10-29 | `04cd9fd` `cde5a42` | `dev`: Prepare splits only when it helps; the button is named Prepare |
+| 2026-11-01 | `829ecb0` `f66c1c3` | `nu7` and `dev`: the SDK's Rust layer on the NU7 crates, built from source for iOS 17.0 and later |
+| 2026-11-03 | `5c173ee` | `dev`: interrupted sends turn delivered once they're on chain |
+| 2026-11-04 | `a10e69c` | `nu7` and `dev`: security updates (zstd, tokio, event-listener), no build warnings |
+| 2026-11-07 | `3a78a62` | `dev`: a new contact's second message is read even when it arrives first; interrupted sends show sent while they wait; no double send |
 
 ## Credits
 
@@ -342,9 +428,10 @@ libraries:
 - **Zcash Swift SDK** ([ZcashLightClientKit](https://github.com/zcash/zcash-swift-wallet-sdk),
   MIT, Znewco, Inc. (Zcash Open Development Lab), maintained in the `zcash` GitHub
   organization): wallet sync, keys, addresses and transactions. Release 3.0.0 is
-  included in `vendor/` under its own MIT license, with Zignal's two fixes listed in
-  `ZIGNAL-PATCHES.md`. It includes **[librustzcash](https://github.com/zcash/librustzcash)**
-  (MIT/Apache-2.0).
+  included in `vendor/` under its own MIT license, with Zignal's two fixes and, on `dev` and
+  `nu7`, its Rust layer rebuilt on the NU7 crates, all listed in `ZIGNAL-PATCHES.md`. It
+  includes **[librustzcash](https://github.com/zcash/librustzcash)** (MIT/Apache-2.0) and
+  **[arti](https://gitlab.torproject.org/tpo/core/arti)** (Tor in Rust, MIT/Apache-2.0).
 - **RustCrypto** crates: `ml-kem`, `chacha20poly1305`, `hkdf`, `hmac`, `sha2`, `argon2`.
 - **dalek-cryptography**: `x25519-dalek`, `ed25519-dalek`.
 - **`bip39`** crate for recovery phrases.
