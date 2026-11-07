@@ -22,6 +22,9 @@ final class ProfileSession {
     private(set) var preparedNoteValue: Int64?
     /// This profile's Zcash wallet while unlocked. Nil until it starts, and in tests.
     private(set) var wallet: WalletEngine?
+    /// False until the wallet has checked this session's interrupted sends once (see
+    /// `reconcileInterruptedSends`). Until then they show "Checking…" instead of "Not sent".
+    private(set) var checkedInterruptedSends = false
 
     /// Whether splitting the balance would help right now (see `ChatReadiness`).
     var chatReadiness: ChatReadiness? {
@@ -361,12 +364,21 @@ final class ProfileSession {
     /// first memo among our own transactions: mined ones mark it delivered, ones still waiting to
     /// be mined mark it sent. Returns true if any changed.
     private func reconcileInterruptedSends() async -> Bool {
-        guard let wallet,
-              messages.contains(where: { $0.outgoing && $0.status == .failed && $0.pendingMemos != nil })
-        else { return false }
+        guard let wallet else { return false }
+        guard messages.contains(where: { $0.outgoing && $0.status == .failed && $0.pendingMemos != nil }) else {
+            markInterruptedSendsChecked()
+            return false
+        }
         let known = Set(messages.compactMap { $0.status == .failed ? nil : $0.txid })
         guard let sent = try? await wallet.sentMemos(except: known), !isClosed else { return false }
-        return InterruptedSends.reconcile(&messages, sent: sent)
+        let changed = InterruptedSends.reconcile(&messages, sent: sent)
+        markInterruptedSendsChecked()
+        return changed
+    }
+
+    /// Set once: setting an observed property, even to the same value, redraws its views.
+    private func markInterruptedSendsChecked() {
+        if !checkedInterruptedSends { checkedInterruptedSends = true }
     }
 
     /// Marks sent messages delivered once mined, or failed if they expired unmined.

@@ -129,7 +129,9 @@ struct ConversationView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(thread) { message in
-                        MessageBubble(message: message, showsStatus: !isDemo) {
+                        MessageBubble(message: message, showsStatus: !isDemo,
+                                      checking: InterruptedSends.isBeingChecked(
+                                          message, checked: session.checkedInterruptedSends)) {
                             Task { await session.retry(message.id) }
                         }
                         .id(message.id)
@@ -234,6 +236,8 @@ private struct MessageBubble: View {
     let message: ChatMessage
     /// Real contacts show sending and delivery; demo messages never touch the network.
     let showsStatus: Bool
+    /// A send cut short by a lock, waiting for the wallet's first check after unlock.
+    let checking: Bool
     let retry: () -> Void
 
     var body: some View {
@@ -248,7 +252,11 @@ private struct MessageBubble: View {
                     .foregroundStyle(message.outgoing ? Color.white : Color.primary)
                     .background(message.outgoing ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
                                 in: .rect(cornerRadius: 16))
-                if showsStatus && message.outgoing && message.status == .failed {
+                if showsStatus && checking {
+                    Label("Checking whether it went out…", systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if showsStatus && message.outgoing && message.status == .failed {
                     Button(action: retry) {
                         Label("Not sent. Tap to send again.", systemImage: "exclamationmark.circle")
                             .font(.caption2)

@@ -269,6 +269,12 @@ enum InterruptedSends {
         return changed
     }
 
+    /// True while a send cut short by a lock or a crash waits for the wallet's first check after
+    /// unlock: the chat shows "Checking…" instead of "Not sent". Send again is safe either way.
+    static func isBeingChecked(_ message: ChatMessage, checked: Bool) -> Bool {
+        !checked && message.outgoing && message.status == .failed && message.interrupted == true
+    }
+
     /// Our transaction still waiting to be mined that carries a message's first memo, if the
     /// wallet holds one. "Send again" sends that same transaction again instead of a new one:
     /// the SDK keeps resending it on its own, so a new one could be paid for twice.

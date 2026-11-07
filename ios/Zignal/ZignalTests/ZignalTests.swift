@@ -677,6 +677,16 @@ struct InterruptedSendsTests {
         #expect(InterruptedSends.waitingCopy(of: memo(1), in: [tx([memo(1)])]) == nil)
     }
 
+    @Test func interruptedSendShowsCheckingUntilTheWalletHasChecked() {
+        #expect(InterruptedSends.isBeingChecked(failed([memo(1)]), checked: false))
+        #expect(!InterruptedSends.isBeingChecked(failed([memo(1)]), checked: true))
+        // A send that failed with a known outcome says "Not sent" straight away.
+        #expect(!InterruptedSends.isBeingChecked(failed([memo(1)], interrupted: false), checked: false))
+        var delivered = failed([memo(1)])
+        delivered.status = .delivered
+        #expect(!InterruptedSends.isBeingChecked(delivered, checked: false))
+    }
+
     @Test func failedSendNotInTheWalletStaysFailed() {
         var messages = [failed([memo(1)])]
         #expect(!InterruptedSends.reconcile(&messages, sent: [tx([memo(3)])]))
