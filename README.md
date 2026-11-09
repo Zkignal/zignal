@@ -236,7 +236,8 @@ that's on the roadmap.
   saved data, its wallet files and the Zcash SDK's settings for that wallet), then opens the
   decoy as usual. It first waits for any wallet that is still stopping, so nothing can write
   the real profile's files again after they are deleted. The phone keeps the same number of
-  profile files at the same size.
+  profile files at the same size. The wiped profile's wallet files are deleted without a
+  replacement, which leaves a trace (see [Security notes](#security-notes-and-known-limitations)).
 - The app never shows which profile is open.
 
 **Storage**
@@ -314,7 +315,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 
 To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
-- **Not audited.** Treat as experimental software.
+- **Not audited.** Treat as experimental software. Friends of the project reviewed `dev` in
+  November 2026; what they found is fixed or listed below.
 - **On chain:** Zcash shielded transactions hide sender, recipient and amount. Your IP address
   and timing are a separate problem.
 - **Network privacy:** with Tor off (the default), the server you use sees your IP address
@@ -378,6 +380,18 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
     PIN is entered again. The duress PIN never deletes anything.
   - If a wallet is still stopping when the panic PIN is entered (for example right after a
     lock during a sync), opening the decoy takes a few seconds longer, at most 15.
+- **The panic PIN leaves a trace:** it destroys the real profile and keeps the same number of
+  profile files, but the real profile's wallet files are deleted without a replacement.
+  Someone examining the phone's files can then see that only the open profile has a wallet.
+  Many phones look like that anyway (a profile's wallet only appears once it's opened), but
+  next to a decoy wallet created minutes earlier it can suggest a wipe. A fix is planned.
+- **PINs against a forensic copy:** the vault is stored in the Keychain, readable only while
+  the phone is unlocked. If forensic tools copy it off the phone, a 6-digit PIN can be
+  guessed offline within hours, and so can the duress and panic PINs. Longer PINs help: each
+  extra digit multiplies the work by 10, and Zignal accepts up to 16. Binding the vault to
+  the iPhone's Secure Enclave, so PINs can only be tried on the phone itself, is planned.
+- **Wrong-PIN wait:** it follows the phone's clock, so someone who can change the clock on
+  an unlocked phone can skip it. A wait that doesn't depend on the clock is planned.
 - **Recovery words on screen:** they're hidden while the screen is recorded, mirrored or
   shared. iOS can't block screenshots or stop a camera pointed at the screen: after a
   screenshot the app warns you to delete it, and nothing can detect a camera.
@@ -424,6 +438,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Hardening from our review:** one-time prekeys for the first message, show when a contact
   resets a chat, and let users revoke unused invites. Hiding the recovery words during screen
   capture and limiting stored contact requests are done on `dev`.
+- **From the November reviews:** a panic wipe that leaves the wallet folder looking the same,
+  the PIN vault bound to the Secure Enclave, and a wrong-PIN wait that doesn't follow the
+  clock.
 - **Faster first sync:** recent checkpoints, so a new wallet starts near the chain tip instead
   of scanning from mid-2026.
 - **Tor library update**, once librustzcash moves to a current arti
@@ -462,6 +479,8 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-07 | `d9ff597` | `dev`: recovery words hidden during screen recording and mirroring; screenshot warning |
 | 2026-11-07 | `220eba7` | `dev`: "Checking" instead of "Not sent" after a lock |
 | 2026-11-09 | `3f28c77` | `dev`: limits on stored contact requests and incomplete messages |
+| 2026-11-09 | `c6a9e82` | `dev`: README lists the new changes, the November tests and two screenshots |
+| 2026-11-09 | `9df2f92` | `dev`: CHANGELOG.md and SECURITY.md (private vulnerability reporting) |
 
 ## Credits
 

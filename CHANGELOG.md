@@ -18,9 +18,12 @@ its entry here in the same commit.
   (`3f28c77`)
 
 ### Documentation
+- The README lists what the November reviews found and what's planned: the trace a panic
+  wipe leaves in the wallet folder, how far a short PIN holds against a forensic copy of the
+  vault, and the wrong-PIN wait that follows the clock.
 - This changelog, and a security policy (`SECURITY.md`): how to report a vulnerability
   privately, what's in scope and the testing rules. The README links both, and its "Try it"
-  dates and the Python reference's test count are brought up to date.
+  dates and the Python reference's test count are brought up to date. (`9df2f92`)
 - The README lists the hidden recovery words, the "Checking" label and the limits on stored
   state, the tests from November 1 to 7 and the Tor library version
   ([zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246)), and it has
