@@ -171,6 +171,31 @@ class SessionTests(unittest.TestCase):
         ev3 = deliver(bob, alice.complete_hello(ev2.invite, "hello from cold"))[0]
         self.assertEqual((ev3.kind, ev3.data), ("new_session", b"hello from cold"))
 
+    def test_contact_requests_are_capped_oldest_first(self):
+        from zkw.session import MAX_REQUESTS
+        alice = Inbox(Identity.from_seed(b"A" * 32), now=NOW)
+        bob = Inbox(Identity.from_seed(b"B" * 32), now=NOW)
+        ids = [deliver(bob, alice.send_hello(A_ADDR), NOW + i)[0].request.hello_id
+               for i in range(MAX_REQUESTS + 8)]
+        self.assertEqual(len(bob.requests), MAX_REQUESTS)
+        self.assertTrue(all(h not in bob.requests for h in ids[:8]))
+        self.assertTrue(all(h in bob.requests for h in ids[8:]))
+        bob.accept_request(ids[-1], B_ADDR)
+
+    def test_waiting_chunk_sets_are_capped_oldest_first(self):
+        r = E.Reassembler()
+        payload = b"\x07" * (E.MAX_BODY + 1)  # two chunks
+        sets = [E.split(E.T_MSG, b"\x01" * 8, payload) for _ in range(E.MAX_PENDING + 5)]
+        for i, memos in enumerate(sets):
+            self.assertEqual(len(memos), 2)
+            self.assertIsNone(r.add(E.Envelope.decode(memos[0]), NOW + i))
+        # The sets that waited least still complete.
+        for memos in sets[5:]:
+            self.assertEqual(r.add(E.Envelope.decode(memos[1]), NOW + 100), (E.T_MSG, b"\x01" * 8, payload))
+        # The five that waited longest were dropped: their second chunk alone completes nothing.
+        for memos in sets[:5]:
+            self.assertIsNone(r.add(E.Envelope.decode(memos[1]), NOW + 100))
+
     def test_receipts_look_like_messages(self):
         alice, bob, _, _ = pair()
         a2b = alice.sessions[bob.me.sig_pub.hex()]

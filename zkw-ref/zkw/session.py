@@ -37,6 +37,7 @@ K_CLOSE = 0x7F
 
 EPOCH_S = 86400
 SEEN_TTL_S = 30 * 86400
+MAX_REQUESTS = 32  # contact requests kept; the oldest goes first
 
 
 def _lp(b: bytes) -> bytes:
@@ -237,6 +238,7 @@ class Inbox:
         self.invite_addrs: dict[bytes, bytes] = {}   # invite_id -> my per-contact address
         self.outgoing_hellos: dict[bytes, bytes] = {}  # hello_id -> my per-contact address
         self.requests: dict[bytes, ContactRequest] = {}
+        self._request_times: dict[bytes, float] = {}  # to drop the oldest first; not saved
         self.seen_eks: dict[str, float] = {}
         self.reasm = E.Reassembler()
 
@@ -259,6 +261,7 @@ class Inbox:
     def accept_request(self, hello_id: bytes, my_addr: bytes) -> tuple[bytes, list[bytes]]:
         """Bob accepts a cold HELLO. Returns (destination address, BUNDLE memos)."""
         req = self.requests.pop(hello_id)
+        self._request_times.pop(hello_id, None)
         inv = Invite(my_addr, self.prekeys.bundle(), hello_id)
         self.invite_addrs[hello_id] = my_addr
         return req.address, E.split(E.T_BUNDLE, P.rand(8), inv.to_bytes())
@@ -284,6 +287,11 @@ class Inbox:
                 return Event("new_session", sess.peer_id, data)
             if t == E.T_HELLO:
                 req = parse_hello(payload)
+                if req.hello_id not in self.requests and len(self.requests) >= MAX_REQUESTS:
+                    oldest = min(self.requests, key=lambda h: self._request_times.get(h, 0))
+                    del self.requests[oldest]
+                    self._request_times.pop(oldest, None)
+                self._request_times[req.hello_id] = now
                 self.requests[req.hello_id] = req  # never auto-accepted
                 return Event("request", request=req)
             if t == E.T_BUNDLE:

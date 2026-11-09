@@ -95,6 +95,9 @@ def split(type_: int, conv_tag: bytes, payload: bytes, msg_id: bytes | None = No
     return [Envelope(type_, conv_tag, i, len(parts), msg_id, p).encode() for i, p in enumerate(parts)]
 
 
+MAX_PENDING = 64  # messages waiting for missing chunks; the one waiting longest goes first
+
+
 class Reassembler:
     """Collects chunks. Chunks of one message arrive in the same transaction, but the
     wallet may surface outputs in any order, so we key on (msg_id) and wait for all."""
@@ -111,6 +114,8 @@ class Reassembler:
             return env.type, env.conv_tag, env.body
         entry = self._pending.get(env.msg_id)
         if entry is None:
+            if len(self._pending) >= MAX_PENDING:
+                del self._pending[min(self._pending, key=lambda k: self._pending[k][0])]
             entry = (now, env.type, env.chunk_total, env.conv_tag, {})
             self._pending[env.msg_id] = entry
         _, t, total, tag, parts = entry

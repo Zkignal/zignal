@@ -1,7 +1,7 @@
 //! End-to-end tests, ported from the Python reference's test_protocol.py.
 
 use zkw_core::envelope::{self as e, Envelope, Reassembler};
-use zkw_core::session::{Event, Inbox, Session, EPOCH_S, K_REACTION, K_RECEIPT};
+use zkw_core::session::{Event, Inbox, Session, EPOCH_S, K_REACTION, K_RECEIPT, MAX_REQUESTS};
 use zkw_core::vault::{self as vault, KdfParams};
 use zkw_core::{safety_number, Error, Identity, Invite};
 
@@ -243,6 +243,47 @@ fn cold_hello_flow() {
     assert!(
         matches!(&deliver(&mut bob, &init, NOW)[..], [Event::NewSession { data, .. }] if data == b"hello from cold")
     );
+}
+
+#[test]
+fn contact_requests_are_capped_oldest_first() {
+    let mut alice = Inbox::new(id(b'A'), NOW);
+    let mut bob = Inbox::new(id(b'B'), NOW);
+    let mut ids = Vec::new();
+    for i in 0..(MAX_REQUESTS + 8) {
+        let hello = alice.send_hello(A_ADDR).unwrap();
+        match deliver(&mut bob, &hello, NOW + i as u64).pop() {
+            Some(Event::Request(r)) => ids.push(r.hello_id),
+            other => panic!("expected request, got {other:?}"),
+        }
+    }
+    assert_eq!(bob.requests.len(), MAX_REQUESTS);
+    assert!(ids[..8].iter().all(|id| !bob.requests.contains_key(id)));
+    assert!(ids[8..].iter().all(|id| bob.requests.contains_key(id)));
+    // The newest can still be accepted.
+    assert!(bob.accept_request(ids.last().unwrap(), B_ADDR).is_ok());
+}
+
+#[test]
+fn waiting_chunk_sets_are_capped_oldest_first() {
+    let mut r = Reassembler::default();
+    let payload = vec![7u8; e::MAX_BODY + 1]; // two chunks
+    let sets: Vec<Vec<Vec<u8>>> = (0..e::MAX_PENDING + 5)
+        .map(|_| e::split(e::T_MSG, [1; 8], &payload).unwrap())
+        .collect();
+    for (i, memos) in sets.iter().enumerate() {
+        assert_eq!(memos.len(), 2);
+        assert_eq!(r.add(&Envelope::decode(&memos[0]).unwrap(), NOW + i as u64), None);
+    }
+    // The sets that waited least still complete.
+    for memos in &sets[5..] {
+        let done = r.add(&Envelope::decode(&memos[1]).unwrap(), NOW + 100);
+        assert_eq!(done, Some((e::T_MSG, [1; 8], payload.clone())));
+    }
+    // The five that waited longest were dropped: their second chunk alone completes nothing.
+    for memos in &sets[..5] {
+        assert_eq!(r.add(&Envelope::decode(&memos[1]).unwrap(), NOW + 100), None);
+    }
 }
 
 #[test]

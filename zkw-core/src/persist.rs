@@ -179,6 +179,7 @@ impl Inbox {
             invite_addrs: pairs16(&v["invite_addrs"])?,
             outgoing_hellos: pairs16(&v["outgoing_hellos"])?,
             requests,
+            request_times: HashMap::new(),
             seen_eks,
             reasm: Reassembler::default(),
         })

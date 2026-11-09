@@ -329,6 +329,10 @@ pub enum Event {
     Bundle(Invite),
 }
 
+/// At most this many contact requests (cold HELLOs) are kept; the oldest goes first. Anyone
+/// with one of our addresses can send one for a fee, and they are saved with the profile.
+pub const MAX_REQUESTS: usize = 32;
+
 /// Owns one profile's identity, prekeys, sessions and replay state.
 /// Feed it every received 512-byte memo from the wallet's transaction history.
 pub struct Inbox {
@@ -338,6 +342,9 @@ pub struct Inbox {
     pub(crate) invite_addrs: HashMap<[u8; 16], Vec<u8>>,
     pub(crate) outgoing_hellos: HashMap<[u8; 16], Vec<u8>>,
     pub requests: HashMap<[u8; 16], ContactRequest>,
+    /// When each request arrived, to drop the oldest first. Not saved: after a restore every
+    /// saved request counts as oldest.
+    pub(crate) request_times: HashMap<[u8; 16], u64>,
     pub(crate) seen_eks: HashMap<[u8; 32], u64>,
     pub(crate) reasm: Reassembler,
 }
@@ -353,6 +360,7 @@ impl Inbox {
             invite_addrs: HashMap::new(),
             outgoing_hellos: HashMap::new(),
             requests: HashMap::new(),
+            request_times: HashMap::new(),
             seen_eks: HashMap::new(),
             reasm: Reassembler::default(),
         }
@@ -383,6 +391,7 @@ impl Inbox {
     /// Bob accepts a cold HELLO. Returns (destination address, BUNDLE memos).
     pub fn accept_request(&mut self, hello_id: &[u8; 16], my_addr: &[u8]) -> Result<(Vec<u8>, Vec<Vec<u8>>)> {
         let req = self.requests.remove(hello_id).ok_or(Error::Crypto("no such request"))?;
+        self.request_times.remove(hello_id);
         let inv = Invite {
             address: my_addr.to_vec(),
             bundle: self.prekeys.bundle(),
@@ -427,6 +436,18 @@ impl Inbox {
             }
             e::T_HELLO => {
                 let req = parse_hello(&payload).ok()?;
+                if !self.requests.contains_key(&req.hello_id) && self.requests.len() >= MAX_REQUESTS {
+                    let oldest = self
+                        .requests
+                        .keys()
+                        .min_by_key(|id| self.request_times.get(*id).copied().unwrap_or(0))
+                        .copied();
+                    if let Some(oldest) = oldest {
+                        self.requests.remove(&oldest);
+                        self.request_times.remove(&oldest);
+                    }
+                }
+                self.request_times.insert(req.hello_id, now);
                 self.requests.insert(req.hello_id, req.clone()); // never auto-accepted
                 Some(Event::Request(req))
             }

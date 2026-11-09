@@ -156,6 +156,12 @@ struct Pending {
     parts: HashMap<u8, Vec<u8>>,
 }
 
+/// At most this many messages wait for missing chunks; the one waiting longest goes first.
+/// Each holds at most 15 chunks of 487 bytes (about 7 KB). Normally none or one waits: a
+/// message's chunks travel in one transaction. Anyone with one of our addresses can send
+/// partial sets for a fee, so without a limit they could fill memory for an hour (the TTL).
+pub const MAX_PENDING: usize = 64;
+
 /// Collects chunks; the wallet may surface outputs of one transaction in any order.
 pub struct Reassembler {
     pending: HashMap<[u8; 8], Pending>,
@@ -178,6 +184,12 @@ impl Reassembler {
         self.pending.retain(|_, v| now.saturating_sub(v.started) <= ttl);
         if env.chunk_total == 1 {
             return Some((env.kind, env.conv_tag, env.body.clone()));
+        }
+        if !self.pending.contains_key(&env.msg_id) && self.pending.len() >= MAX_PENDING {
+            let oldest = self.pending.iter().min_by_key(|(_, v)| v.started).map(|(k, _)| *k);
+            if let Some(oldest) = oldest {
+                self.pending.remove(&oldest);
+            }
         }
         let entry = self.pending.entry(env.msg_id).or_insert_with(|| Pending {
             started: now,
