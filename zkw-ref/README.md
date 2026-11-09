@@ -7,7 +7,7 @@ prove the design works and pin down exact bytes, so other implementations (the R
 
 ## Run
 ```
-python3 -m unittest -v          # 29 tests
+python3 -m unittest -v          # 31 tests
 python3 -m vectors.generate     # regenerate vectors (only after a deliberate protocol change)
 ```
 Needs Python 3.11+ and `cryptography` >= 47 (for ML-KEM). Nothing else.

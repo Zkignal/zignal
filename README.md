@@ -23,7 +23,8 @@ Double Ratchet. A leaked wallet viewing key reveals neither past messages nor wh
 | `nu7` | `zecathon-final` plus only the SDK update for NU7 (nothing in the app changes) and its README. Tagged `zecathon-nu7` after testing on mainnet past NU7 activation. |
 | `dev` | Where work continues: the same SDK as `nu7`, plus app fixes. Tested releases move to `main` later. |
 
-What `dev` changes compared with `main`, newest first:
+What `dev` changes compared with `main`, newest first. [CHANGELOG.md](CHANGELOG.md) lists every
+change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
@@ -151,7 +152,7 @@ that's on the roadmap.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
   protocol without touching the network.
 - **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
-  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 4
+  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 7
   (see [This branch](#this-branch-dev)).
 
 ## Repository layout
@@ -310,6 +311,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 - Cmd+R runs the app. The wallet connects to the first server in its list.
 
 ## Security notes and known limitations
+
+To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 - **Not audited.** Treat as experimental software.
 - **On chain:** Zcash shielded transactions hide sender, recipient and amount. Your IP address
