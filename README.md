@@ -27,6 +27,11 @@ What `dev` changes compared with `main`, newest first:
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 9 | **Limits on what strangers can store.** Zignal's core keeps at most 32 contact requests and 64 incomplete multi-memo messages; the oldest go first. | Anyone with one of your addresses can send contact requests or partial messages for the price of a fee. Before, they were kept without a limit, and requests are saved with the profile. | `3f28c77` |
+| Nov 7 | **"Checking whether it went out…"** replaces the red "Not sent" for the few seconds after unlocking while the wallet checks a send that a lock cut short. | The message had usually gone out. "Not sent" was alarming and invited a needless tap. | `220eba7` |
+| Nov 7 | **The recovery words are hidden while the screen is recorded, mirrored or shared**, on the recovery phrase screen and in the restore field. A screenshot taken while they show brings up a warning to delete it. | A screen recording, AirPlay or screen sharing in a call would otherwise capture all 24 words. iOS can't block screenshots, so the app warns instead. | `d9ff597` |
+| Nov 7 | **"Tap to send again" sends the same transaction again** when the wallet still holds it, instead of building a new one. | The Zcash SDK keeps a failed send's transaction and resends it every few minutes on its own until it expires, so a new transaction could be paid for twice. | `96668c4` |
+| Nov 7 | **Add funds says received ZEC can be spent in about 4 minutes.** | NU7 brought 25-second blocks, so the 10 confirmations take about 4 minutes instead of 12. | `8c6a7f8` |
 | Nov 7 | **Sending and receiving are more robust.** A contact's second message is no longer lost when it arrives before their first. A send cut short by a lock shows "sent" while its transaction waits to be mined, instead of "Not sent". "Tap to send again" can't send a message twice when tapped twice. | A new contact's early messages could be dropped when the wallet listed them before the message that opened the chat. Tapping "send again" too early or twice paid a second fee. | `3a78a62` |
 | Nov 4 | **Security updates in the SDK's Rust dependencies:** `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2, `tokio` 1.53.3 and `event-listener` 5.4.2, all patch releases. The SDK library now builds with no compiler warnings. | Fixes RustSec advisories RUSTSEC-2026-0391, -0398, -0403, -0410, -0386 and -0221. Two advisories remain, through the Tor client, with no compatible fix yet (see [Security notes](#security-notes-and-known-limitations)). | `a10e69c` |
 | Nov 3 | **Interrupted sends are no longer shown as failed.** If you lock the app while a message is sending, it shows "Not sent" at first. Once the wallet sees that message's transaction in a block, the message turns "delivered" by itself. "Tap to send again" checks this first. | Locking mid-send used to leave a "Not sent" message that had in fact gone out. Sending it again cost a second fee. | `5c173ee` |
@@ -36,13 +41,15 @@ What `dev` changes compared with `main`, newest first:
 | Nov 1 | **The build keeps the builder out of the library.** File paths from the build machine are removed, and the build stops if any remain. The library targets iOS 17.0, the app's minimum. | By default, Rust and C compilers embed source file paths in a library, including the builder's home folder, and from there they end up in the app. | `f66c1c3` |
 | Oct 29 | **Prepare** (formerly "Prepare for chatting") splits your balance only when it helps. It estimates how many messages can go out back to back from the last split. It waits while recent messages' change confirms, instead of splitting again. The button shows Ready, Confirming or Prepare, with one line saying why. | Before, the app could suggest splitting again when it didn't need to, and the long label wrapped onto two lines. | `04cd9fd` `cde5a42` |
 
-Tested on `dev` (November 1 to 4, iPhone, Zcash mainnet):
+Tested on `dev` (November 1 to 7, iPhone, Zcash mainnet):
 - existing wallets upgraded to the new wallet database and kept syncing;
-- messages both ways with Tor on and off;
+- messages both ways with Tor on and off, before and after NU7 activated (November 6, UTC);
 - Add funds and Prepare;
-- three interrupted sends, each delivered without a second fee.
+- interrupted sends: each showed "sent", then "delivered", without a second fee, including one
+  sent in airplane mode that went out once the network came back;
+- the recovery words hidden during a screen recording, and the warning after a screenshot.
 
-76 app tests and 2 UI tests pass.
+77 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -77,6 +84,15 @@ message is a shielded transaction, shown as delivered once it's in a block. One 
 out with Tor on. Top row: the real profile's chats and wallet, its side of the conversation,
 and the network settings (Tor switch and server list). Bottom row: the decoy profile's chats
 and wallet, its side of the same conversation, and its wallet syncing.
+
+<p>
+  <img src="pics/11-Recording-ScreenShare-Rec-Hide.png" width="200" alt="Recovery phrase screen during a screen recording: the words are hidden">
+  <img src="pics/10-ScreenShot-Taken-Recovery-Hide.png" width="300" alt="Warning after a screenshot of the recovery phrase screen">
+</p>
+
+On `dev`, on an iPhone. Left: a screen recording of the recovery phrase screen, played back on
+a Mac: while the recording runs, a notice takes the place of the 24 words. Right: the warning
+after a screenshot of the same screen (the words above it are cropped out of this picture).
 
 ## What works today
 
@@ -278,7 +294,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 76 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 77 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
     test for each unlock step;
   - storage encryption and tamper checks, and what a silent wipe leaves behind;
@@ -286,8 +302,9 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   - payment request encoding and address checks, invite parsing against a real invite from
     the core, and copying an invite as text;
   - memo filtering, wallet settings and messages, and waiting for stopped wallets;
-  - when Prepare splits or waits, interrupted sends found in the wallet, and reading a chat's
-    first message before the rest.
+  - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
+    transaction and shown as "Checking" until the wallet has looked; and reading a chat's first
+    message before the rest.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
 - Cmd+R runs the app. The wallet connects to the first server in its list.
@@ -309,10 +326,12 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   could pose as the server: see which transactions you fetch, hide or fake server data, block
   sends. They can't take funds or read messages. **Fixed on `dev` and `nu7`**, which use
   `rustls-webpki` 0.103.16 and `webpki-roots` 1.0.11.
-- **A send cut short by a lock:** if the wallet already made its transaction, the message
-  shows "sent" until it's mined. If the lock came in the moment after the transaction was
-  made but before it went out, the message shows "sent" until the transaction expires (about
-  50 minutes), then "Not sent" with tap to send again.
+- **A send that didn't finish:** after a lock or a crash, the message shows "Checking whether
+  it went out…" until the wallet has looked, then "sent" while its transaction waits to be
+  mined. If it never reached the server, the Zcash SDK resends it every few minutes while the
+  app is open, until it's mined or expires (about 50 minutes). When a send fails outright,
+  "Tap to send again" sends the same transaction if the wallet still holds it, so a message
+  is paid for once.
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
@@ -323,6 +342,11 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   - `crypto-bigint`: used for SSH key parsing for onion services, which Zignal doesn't use.
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
+- **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
+  (November 3, 2026) fixes several low-severity security issues, but librustzcash's NU7
+  releases pin arti 0.43, so an update needs a new librustzcash release. Requested upstream in
+  [zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246). Tor is off by
+  default.
 - **Open app only:** messages arrive while the app is unlocked and synced. There are no push
   notifications, which would need a Zignal server.
 - **Cost and delay:** each message costs a normal network fee and arrives after about one block
@@ -351,6 +375,9 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     PIN is entered again. The duress PIN never deletes anything.
   - If a wallet is still stopping when the panic PIN is entered (for example right after a
     lock during a sync), opening the decoy takes a few seconds longer, at most 15.
+- **Recovery words on screen:** they're hidden while the screen is recorded, mirrored or
+  shared. iOS can't block screenshots or stop a camera pointed at the screen: after a
+  screenshot the app warns you to delete it, and nothing can detect a camera.
 - **One phrase, two roles:** a profile's 24-word phrase is both its wallet seed and its
   messaging identity. Anyone with the words can spend the funds and pose as you to your
   contacts with the same safety number, though they can't read past messages.
@@ -359,7 +386,10 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   Double Ratchet applies.
 - **Unused invites** stay valid for about three weeks, and whoever uses one first becomes that
   contact. Compare safety numbers before trusting a chat.
-- **NU7:** NU7 activates on mainnet at block 3,543,405 (around November 5, 2026).
+- **Spam:** anyone with one of your addresses can send you contact requests (not shown in the
+  app yet) or partial messages for the price of a fee. Zignal's core keeps at most 32 requests
+  and 64 incomplete messages, dropping the oldest first.
+- **NU7:** NU7 activated on mainnet at block 3,543,405 on November 6, 2026, at 02:34 UTC.
   - The Zecathon build (`main`, `zecathon-final`) uses SDK 3.0.0's prebuilt library, so it
     stops syncing and can't send after that.
   - ECC's SDK ends support at NU7. Its final release, 4.0.0, doesn't include NU7, and
@@ -368,8 +398,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     two fixes, and its Rust layer rebuilt on librustzcash's NU7 releases.
   - That update is on `nu7`, changing only the SDK in `vendor/` (and the README), and on
     `dev`. It is tagged `zecathon-nu7` and was tested on mainnet after activation.
-  - The light server you use must also run NU7-ready software (Zebra 7.0.0 or later) by the
-    activation block, or syncing stops until it does.
+  - The light server you use must run NU7-ready software (Zebra 7.0.0 or later), or syncing
+    stops until it does.
 
 ## Roadmap (after the Zecathon)
 
@@ -388,9 +418,13 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 - **Contact requests:** start a chat with any Zignal user from their shielded address, with a
   requests inbox, accept and block, and a small fee for strangers. QR invites stay for meeting
   in person and verifying each other.
-- **Hardening from our review:** hide the recovery words while the screen is recorded or
-  mirrored, cap stored contact requests, one-time prekeys for the first message, show when a
-  contact resets a chat, and let users revoke unused invites.
+- **Hardening from our review:** one-time prekeys for the first message, show when a contact
+  resets a chat, and let users revoke unused invites. Hiding the recovery words during screen
+  capture and limiting stored contact requests are done on `dev`.
+- **Faster first sync:** recent checkpoints, so a new wallet starts near the chain tip instead
+  of scanning from mid-2026.
+- **Tor library update**, once librustzcash moves to a current arti
+  ([zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246)).
 - **Later:** post-quantum protection for every message (not only the handshake), and Android.
 
 ## Development log
@@ -419,6 +453,12 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-03 | `5c173ee` | `dev`: interrupted sends turn delivered once they're on chain |
 | 2026-11-04 | `a10e69c` | `nu7` and `dev`: security updates (zstd, tokio, event-listener), no build warnings |
 | 2026-11-07 | `3a78a62` | `dev`: a new contact's second message is read even when it arrives first; interrupted sends show sent while they wait; no double send |
+| 2026-11-07 | `8c6a7f8` | `dev`: Add funds says about 4 minutes after NU7 |
+| 2026-11-07 | `96668c4` | `dev`: send again resends the same transaction |
+| 2026-11-07 | `fe61388` | `dev`: README says what `dev` changes compared with the submission |
+| 2026-11-07 | `d9ff597` | `dev`: recovery words hidden during screen recording and mirroring; screenshot warning |
+| 2026-11-07 | `220eba7` | `dev`: "Checking" instead of "Not sent" after a lock |
+| 2026-11-09 | `3f28c77` | `dev`: limits on stored contact requests and incomplete messages |
 
 ## Credits
 
