@@ -48,6 +48,8 @@ final class ProfileSession {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var walletRestored: Bool
     @ObservationIgnored private var processedTransactions: [Data]
+    /// Carried through every save; set and cleared by `AppModel` (see `ProfileData.wipePending`).
+    @ObservationIgnored private let wipePending: Bool?
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
     /// Messages being sent again right now, so a second tap can't send them twice.
@@ -66,6 +68,7 @@ final class ProfileSession {
         walletRestored = loaded.data.walletRestored ?? false
         processedTransactions = loaded.data.processedTransactions ?? []
         preparedNoteValue = loaded.data.preparedNoteValue
+        wipePending = loaded.data.wipePending
     }
 
     // MARK: - Lifecycle
@@ -551,7 +554,8 @@ final class ProfileSession {
                                walletRestored: walletRestored ? true : nil,
                                walletSettings: walletSettings == .standard ? nil : walletSettings,
                                processedTransactions: processedTransactions,
-                               preparedNoteValue: preparedNoteValue)
+                               preparedNoteValue: preparedNoteValue,
+                               wipePending: wipePending)
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }

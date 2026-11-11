@@ -431,6 +431,25 @@ struct WalletFiles {
         }
     }
 
+    /// Removes every per-wallet setting the SDK kept in the app's preferences. Called at launch:
+    /// older versions wrote one there for each wallet, and the preferences file goes into
+    /// device backups. The SDK now keeps that setting in each wallet's own folder.
+    static func removeAllSDKDefaults(defaults: UserDefaults = .standard) {
+        for key in defaults.dictionaryRepresentation().keys
+        where key.range(of: #"(^|_)c_[0-9a-f]{16}($|_)"#, options: .regularExpression) != nil {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    /// True when the wallet folder holds nothing but the files of the profile with `keepAlias`.
+    /// Checked before a silent wipe counts as finished.
+    static func holdsOnly(_ keepAlias: String, root: URL = WalletFiles.standardRoot) -> Bool {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else {
+            return !FileManager.default.fileExists(atPath: root.path)
+        }
+        return names.allSatisfy { $0.hasPrefix("c_\(keepAlias)_") }
+    }
+
     /// Deletes every wallet file except those of the profile with `keepAlias`. Called after a
     /// silent wipe: the wiped profile's wallet database (addresses, transactions, memos) would
     /// otherwise stay on the phone. Its alias can't be known any more, but everything that isn't

@@ -113,3 +113,24 @@ and this file. Every changed spot is marked `Zignal patch`.
 
 Both fixes are reported upstream: https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012
 (the stop issue, and the mempool watchers in a follow-up comment).
+
+## Change: the witness-repair record moves out of the app's preferences (Zignal `dev` only)
+
+**Problem.** Once per app version and wallet, `SDKSynchronizer.prepare` runs a witness repair
+and records the version it ran for in `UserDefaults.standard`, under
+`ud_fixWitnessesLastVersionCall_<alias>`. Zignal names each wallet with an alias derived from
+its profile (`c_<16 hex>`) and keeps the wallet files out of device backups, but the app's
+preferences file is in every backup. One key per wallet showed how many wallets had been
+opened, and each recorded version showed which app version that wallet last ran under. A
+backup taken before a panic wipe and the phone after it showed that a wallet was removed.
+
+**Change.** `WitnessesFixGate` keeps the record in a file, `witnesses_fix_version`, inside the
+alias's own general storage folder (`Initializer.generalStorageURL`, which the SDK already
+prefixes with the alias, for example `c_<alias>_general/`). That folder sits with the wallet's
+other files, out of backups, and goes when the wallet's files are deleted. The decision rules
+are unchanged. Zignal removes the old keys from its preferences at launch, so each wallet runs
+the repair once more after the update (the repair is idempotent).
+
+Files: `Sources/ZcashLightClientKit/Utils/WitnessesFixGate.swift`,
+`Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
+spot is marked `Zignal patch`. Not on the `nu7` branch.

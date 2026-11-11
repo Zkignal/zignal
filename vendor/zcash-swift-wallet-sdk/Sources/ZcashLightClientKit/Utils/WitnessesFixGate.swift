@@ -11,6 +11,10 @@ import Foundation
 /// The record is scoped per synchronizer alias, because every alias owns its own data DB and so
 /// has to be repaired independently.
 ///
+/// Zignal patch: the record is a small file in the alias's own general storage folder, not a
+/// `UserDefaults` key. The app's preferences go into device backups and outlive the wallet's
+/// files, so one key per alias showed how many wallets the app had opened, and when.
+///
 /// Versions are compared numerically component-wise, so "2.10.0" is newer than "2.9.0". A plain
 /// String comparison orders them lexicographically instead, which skips the repair whenever the
 /// shorter number's leading digit is the larger one — "2.9.0" before "2.10.0", but also "2.99.0"
@@ -49,18 +53,20 @@ struct WitnessesFixGate {
     }
 
     private let currentVersion: String?
-    private let userDefaults: UserDefaults
-    private let key: String
+    /// Zignal patch: where the version is recorded (inside the alias's general storage folder).
+    private let recordURL: URL
 
-    init(currentVersion: String?, userDefaults: UserDefaults, alias: ZcashSynchronizerAlias) {
+    /// Zignal patch: `generalStorageURL` is the alias's own folder (`Initializer.generalStorageURL`).
+    init(currentVersion: String?, generalStorageURL: URL) {
         self.currentVersion = currentVersion
-        self.userDefaults = userDefaults
-        self.key = "ud_fixWitnessesLastVersionCall_\(alias.description)"
+        self.recordURL = generalStorageURL.appendingPathComponent("witnesses_fix_version")
     }
 
     func decide() -> Decision {
         guard let currentVersion else { return .unknownAppVersion }
-        guard let recordedVersion = userDefaults.string(forKey: key) else { return .firstRun(current: currentVersion) }
+        guard let recordedVersion = try? String(contentsOf: recordURL, encoding: .utf8) else {
+            return .firstRun(current: currentVersion)
+        }
         guard recordedVersion != currentVersion else { return .sameVersion(current: currentVersion) }
 
         guard
@@ -86,7 +92,12 @@ struct WitnessesFixGate {
     func recordCurrentVersion() {
         guard let currentVersion else { return }
 
-        userDefaults.set(currentVersion, forKey: key)
+        // Zignal patch: a failed write only means the repair runs again next time. The file holds
+        // only the version string and takes the wallet folder's data protection.
+        try? FileManager.default.createDirectory(
+            at: recordURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try? Data(currentVersion.utf8).write(to: recordURL, options: .atomic)
     }
 
     private static func isNewer(_ current: [Int], than recorded: [Int]) -> Bool {

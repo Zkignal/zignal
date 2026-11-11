@@ -11,6 +11,23 @@ its entry here in the same commit.
 ## 2026-11-11
 
 ### Security
+- **A panic wipe that was cut short is finished the next time the decoy opens.** The panic
+  PIN now records in the decoy profile's own sealed data that a wipe is under way, and clears
+  the record only once the real profile's file and wallet files are confirmed gone. If the
+  app is closed or the phone switched off before then, the next unlock of the decoy, with the
+  duress or the panic PIN, finishes the wipe. Before, the real wallet's database stayed on the
+  phone until the panic PIN was entered again. A wipe cut short also ends with the usual two
+  profile files. 3 new tests.
+- **Every unlock stores the PIN vault again**, under a new seal, so its Keychain item changes
+  on every unlock and its change date no longer marks a panic wipe. 1 new test.
+- **The Zcash SDK's one setting per wallet moves out of the app's preferences.** The SDK
+  recorded the app version for which it last repaired a wallet's notes as
+  `ud_fixWitnessesLastVersionCall_c_<alias>` in the app's preferences, which go into device
+  backups and outlive the wallet's files, so they kept one entry for every wallet the app had
+  opened. The record is now a file in the wallet's own folder, which isn't backed up and is
+  deleted with the wallet. The app deletes the old entries each time it starts. The first time
+  each wallet opens after the update, the SDK runs that repair once more. A patch to the
+  vendored SDK, listed in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`. 1 new test.
 - **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for
   the profile files. Both are stored in the Keychain encrypted to a P-256 key that never
   leaves the Secure Enclave (ECDH with a fresh ephemeral key, HKDF-SHA256, AES-GCM). A copy
@@ -19,17 +36,19 @@ its entry here in the same commit.
   update and its device key at the first unlock, without asking for a PIN; each old copy is
   deleted only after the sealed one has been read back and opened. Each setup makes a new
   key. Release builds refuse to set up without a Secure Enclave. New file
-  `Core/DeviceSecrets.swift`; 10 new tests.
+  `Core/DeviceSecrets.swift`; 10 new tests. (`adbf62f`)
 - **The wrong-PIN wait no longer follows the clock.** It's measured on
   `CLOCK_MONOTONIC_RAW` (the clock behind Swift's `ContinuousClock`), which keeps counting
   while the phone sleeps and can't be set. Changing the date or time doesn't shorten the
   wait; a restart can start it over but never shortens it. A wait saved by an older version
-  starts over once. 2 new tests.
+  starts over once. 2 new tests. (`adbf62f`)
 
 ### Documentation
+- The README describes how a wipe that was cut short is finished, the vault stored again on
+  every unlock, and where the SDK's setting is kept.
 - The README's security notes describe the seal and the new wait, and what's still possible
   with code running inside Zignal on an unlocked phone. The known limitations about a copy of
-  the Keychain and about the clock are gone.
+  the Keychain and about the clock are gone. (`adbf62f`)
 
 ## 2026-11-09
 

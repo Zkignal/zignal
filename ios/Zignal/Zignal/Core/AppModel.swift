@@ -44,6 +44,9 @@ final class AppModel {
                 defaults.set(true, forKey: Self.installedKey)
             }
             try store.prepare()
+            // Older versions let the Zcash SDK keep one setting per wallet in the app's
+            // preferences, which go into device backups. It now lives in the wallet's folder.
+            WalletFiles.removeAllSDKDefaults()
             // Reading the vault also moves an older install's Keychain items under the
             // Secure Enclave seal (DeviceSecrets).
             phase = try DeviceSecrets.app.read(.vault) == nil ? .setup : .locked
@@ -120,33 +123,30 @@ final class AppModel {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
             let wiped = result.vault != vault
-            if wiped {
-                try DeviceSecrets.app.write(result.vault, to: .vault) // a silent wipe ran
-            }
             guard let secret = result.secret else {
                 errorText = "Wrong PIN."
                 try updateLockout()
                 return
             }
+            if wiped {
+                try DeviceSecrets.app.write(result.vault, to: .vault) // a silent wipe ran
+            } else {
+                // Every successful unlock stores the vault again, sealed afresh, so its bytes and
+                // the Keychain's change date move on every unlock and don't mark the moment a
+                // panic PIN was used. A failure here changes nothing and doesn't block the unlock.
+                try? DeviceSecrets.app.write(result.vault, to: .vault)
+            }
             AttemptLimiter.reset()
             lockedUntil = nil
             let keys = try ProfileKeyset(secret: secret)
             if wiped {
-                // Everything of the wiped profile goes: its profile file, its wallet files and
-                // the SDK's per-wallet settings. A wallet stopped on an earlier lock may still be
-                // finishing its last step and could write its files again, so wait for it
-                // first. Failures are ignored on purpose: under duress the decoy must still
-                // open normally, and a later wipe attempt runs this again.
-                let settled = await WalletShutdown.waitForAll()
-                Self.removeEverythingBut(keys)
-                try? store.removeOthers(keeping: keys)
-                if !settled {
-                    // Still running after the wait: delete again once it has stopped.
-                    Task {
-                        await WalletShutdown.waitForAll(timeout: .seconds(300))
-                        Self.removeEverythingBut(keys)
-                    }
-                }
+                // Remembered inside this profile's own sealed data until the wipe is confirmed
+                // finished, so an interrupted wipe (the app killed, the phone off) is finished the
+                // next time this profile opens, with either of its PINs.
+                try? store.setWipePending(true, for: keys)
+            }
+            if wiped || (try? store.wipePending(for: keys)) == true {
+                await finishWipe(keeping: keys)
             }
             let seed = try await Task.detached(priority: .userInitiated) {
                 try walletSeed(profileSecret: secret)
@@ -154,6 +154,27 @@ final class AppModel {
             show(try await ProfileSession.open(keys: keys, store: store), walletSeed: seed)
         } catch {
             errorText = Self.describe(error)
+        }
+    }
+
+    /// Deletes everything of the wiped profile: its profile file, its wallet files and the SDK's
+    /// per-wallet settings. A wallet stopped on an earlier lock may still be finishing its last
+    /// step and could write its files again, so it waits for that first. Failures don't stop
+    /// the unlock (under duress the decoy must still open normally); the wipe stays marked as
+    /// pending and runs again the next time this profile opens.
+    private func finishWipe(keeping keys: ProfileKeyset) async {
+        let settled = await WalletShutdown.waitForAll()
+        Self.removeEverythingBut(keys)
+        let filesRemoved = (try? store.removeOthers(keeping: keys)) != nil
+        if settled && filesRemoved && WalletFiles.holdsOnly(keys.walletAlias) {
+            try? store.setWipePending(false, for: keys)
+        } else if !settled {
+            // Still running after the wait: delete again once it has stopped. The wipe stays
+            // pending, so the next open checks again.
+            Task {
+                await WalletShutdown.waitForAll(timeout: .seconds(300))
+                Self.removeEverythingBut(keys)
+            }
         }
     }
 

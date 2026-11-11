@@ -312,6 +312,20 @@ struct DeviceSecretsTests {
         }
     }
 
+    /// Every unlock writes the vault again. Each write seals it afresh, so the stored bytes
+    /// change every time and don't single out the unlock that ran a panic wipe.
+    @Test func writingTheSameVaultAgainChangesItsStoredBytes() throws {
+        try withTestSecrets { secrets in
+            let vault = try secureRandom(3176)
+            try secrets.write(vault, to: .vault)
+            let first = try #require(try Keychain.read(.sealedVault, service: secrets.service))
+            try secrets.write(vault, to: .vault)
+            let second = try #require(try Keychain.read(.sealedVault, service: secrets.service))
+            #expect(first != second)
+            #expect(try secrets.read(.vault) == vault)
+        }
+    }
+
     @Test func removeAllLeavesNothingBehind() throws {
         try withTestSecrets { secrets in
             try secrets.write(try secureRandom(3176), to: .vault)
@@ -1084,6 +1098,93 @@ struct WalletWipeTests {
         #expect(defaults.object(forKey: "c_\(wiped)_someFutureSetting") == nil)
         #expect(defaults.bool(forKey: "installed"))
         #expect(defaults.string(forKey: "abc_c_short") == "x")
+    }
+
+    /// Older versions let the SDK keep one setting per wallet in the app's preferences, which
+    /// go into device backups. Launch removes all of them and nothing else.
+    @Test func olderSDKSettingsAreRemovedAtLaunch() throws {
+        let suite = "zignal-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("1.0", forKey: "ud_fixWitnessesLastVersionCall_c_aaaaaaaaaaaaaaaa")
+        defaults.set("1.0", forKey: "ud_fixWitnessesLastVersionCall_c_bbbbbbbbbbbbbbbb")
+        defaults.set(true, forKey: "installed")
+        defaults.set("x", forKey: "abc_c_short")
+
+        WalletFiles.removeAllSDKDefaults(defaults: defaults)
+
+        #expect(defaults.object(forKey: "ud_fixWitnessesLastVersionCall_c_aaaaaaaaaaaaaaaa") == nil)
+        #expect(defaults.object(forKey: "ud_fixWitnessesLastVersionCall_c_bbbbbbbbbbbbbbbb") == nil)
+        #expect(defaults.bool(forKey: "installed"))
+        #expect(defaults.string(forKey: "abc_c_short") == "x")
+    }
+
+    /// A wipe counts as finished only when nothing but the open profile's wallet is left.
+    @Test func walletFolderCheckSeesLeftovers() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "zignal-wallet-\(UUID().uuidString)",
+                                                    directoryHint: .isDirectory)
+        #expect(WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root)) // no folder yet
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        try Data("db".utf8).write(to: root.appending(path: "c_aaaaaaaaaaaaaaaa_data.db"))
+        #expect(WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root))
+        try Data("db".utf8).write(to: root.appending(path: "c_bbbbbbbbbbbbbbbb_data.db"))
+        #expect(!WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root))
+    }
+
+    /// A wipe cut short after its filler was written leaves three files. Finishing it ends
+    /// with the usual two, and running it again changes nothing that can be told apart.
+    @Test func anInterruptedWipeFinishesWithTheUsualTwoFiles() throws {
+        let store = try makeTempStore()
+        let real = try ProfileKeyset(secret: secureRandom(32))
+        let decoy = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: real), real),
+                               (ProfileSession.emptyData(keys: decoy), decoy)])
+        let decoyData = try store.load(decoy)
+        let size = try Data(contentsOf: store.fileURL(for: decoy)).count
+        // As if the app stopped right after writing the filler, before deleting anything.
+        let extra = try secureRandom(16).map { String(format: "%02x", $0) }.joined()
+        try secureRandom(size).write(to: store.directory.appending(path: extra))
+        #expect(try fileNames(store).count == 3)
+
+        try store.removeOthers(keeping: decoy)
+        #expect(try fileNames(store).count == 2)
+        #expect(try store.load(real) == nil)
+        #expect(try store.load(decoy) == decoyData)
+
+        try store.removeOthers(keeping: decoy)
+        #expect(try fileNames(store).count == 2)
+        #expect(try store.load(decoy) == decoyData)
+    }
+}
+
+/// The record that a panic wipe still has to be finished lives in the open profile's own data.
+@MainActor
+struct WipePendingTests {
+    @Test func wipePendingSurvivesSavesUntilCleared() async throws {
+        let store = try makeTempStore()
+        let real = try ProfileKeyset(secret: secureRandom(32))
+        let decoy = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: real), real),
+                               (ProfileSession.emptyData(keys: decoy), decoy)])
+        #expect(try !store.wipePending(for: decoy))
+
+        try store.setWipePending(true, for: decoy)
+        #expect(try store.wipePending(for: decoy))
+        #expect(try !store.wipePending(for: real))
+
+        // Opening the profile and saving from the session keeps the record.
+        let session = try await ProfileSession.open(keys: decoy, store: store)
+        await session.updateWalletSettings(WalletSettings(servers: [.init(host: "lwd.example.net", port: 9067)],
+                                                          torEnabled: true))
+        #expect(try store.wipePending(for: decoy))
+        session.close()
+
+        try store.setWipePending(false, for: decoy)
+        #expect(try !store.wipePending(for: decoy))
+        #expect(try store.load(decoy)?.wipePending == nil)
+        #expect(try store.load(decoy)?.walletSettings?.torEnabled == true)
     }
 }
 

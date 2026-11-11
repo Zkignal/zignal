@@ -25,6 +25,10 @@ struct ProfileData: Codable, Equatable {
     /// Zatoshis in each note made by the last "Prepare for chatting". Used to estimate how many
     /// messages can go out back to back without splitting again.
     var preparedNoteValue: Int64?
+    /// True from the moment a panic PIN wipes the other profile until its files are confirmed
+    /// gone. Kept inside this profile's sealed data, so nobody can see it without this
+    /// profile's PIN. Nil otherwise.
+    var wipePending: Bool?
 }
 
 /// A profile being restored from its recovery phrase, waiting for PINs to be set.

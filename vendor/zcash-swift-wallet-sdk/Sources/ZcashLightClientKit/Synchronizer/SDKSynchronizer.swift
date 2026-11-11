@@ -296,10 +296,10 @@ public class SDKSynchronizer: Synchronizer {
     // MARK: Witnesses Fix
 
     private func resolveWitnessesFix() async {
+        // Zignal patch: recorded in the wallet's own folder, not in the app's preferences.
         let gate = WitnessesFixGate(
             currentVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-            userDefaults: UserDefaults.standard,
-            alias: initializer.alias
+            generalStorageURL: initializer.generalStorageURL
         )
 
         let decision = gate.decide()

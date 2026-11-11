@@ -116,10 +116,14 @@ struct ProfileStore {
         try write(profiles)
     }
 
-    /// Deletes every profile file except this profile's, after writing the same number of
-    /// fresh filler files at the same size. Used after a silent wipe: the wiped profile's file
-    /// can't be opened without its recovery phrase, but it shouldn't stay on the phone at all.
-    /// The file count and size stay as they were, so the folder doesn't show that a profile left.
+    /// Deletes every profile file except this profile's, leaving one fresh filler file at the
+    /// same size in their place. Used after a silent wipe: the wiped profile's file can't be
+    /// opened without its recovery phrase, but it shouldn't stay on the phone at all. The folder
+    /// keeps its usual two files (this profile and one more), so it doesn't show that a
+    /// profile left.
+    ///
+    /// The filler is written first, so an interruption never leaves fewer files than before.
+    /// Running this again (to finish an interrupted wipe) ends with the same two files.
     func removeOthers(keeping keys: ProfileKeyset) throws {
         let keep = fileURL(for: keys)
         let others = try profileFiles().filter { $0 != keep }
@@ -128,8 +132,7 @@ struct ProfileStore {
         let sealedSize = try Data(contentsOf: sample).count
         guard sealedSize > 28 else { throw ZignalError.damagedProfile }
         defer { equalizeTimestamps() }
-        // Fillers first, so an interruption never leaves fewer files than before.
-        for _ in others {
+        for _ in 1..<Self.minimumFiles {
             let filler = try ChaChaPoly.seal(try secureRandom(sealedSize - 28), using: deviceKey,
                                              authenticating: Self.outerAD).combined
             try filler.write(to: fileURL(named: Self.hex(try secureRandom(16))),
@@ -138,6 +141,18 @@ struct ProfileStore {
         for url in others {
             try FileManager.default.removeItem(at: url)
         }
+    }
+
+    /// Whether a silent wipe still has to be finished (see `ProfileData.wipePending`).
+    func wipePending(for keys: ProfileKeyset) throws -> Bool {
+        try load(keys)?.wipePending == true
+    }
+
+    /// Records in this profile's own sealed data whether a silent wipe still has to be finished.
+    func setWipePending(_ pending: Bool, for keys: ProfileKeyset) throws {
+        guard var data = try load(keys) else { return }
+        data.wipePending = pending ? true : nil
+        try save(data, keys)
     }
 
     func fileURL(for keys: ProfileKeyset) -> URL {
