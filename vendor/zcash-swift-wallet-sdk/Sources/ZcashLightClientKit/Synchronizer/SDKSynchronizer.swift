@@ -1530,7 +1530,9 @@ public class SDKSynchronizer: Synchronizer {
         await blockProcessor.updateService(initializer.container)
 
         // Start synchronization
-        if status != .unprepared {
+        // Zignal patch: not if the client stopped the synchronizer while the switch was under way
+        // (or before it): a stopped wallet must stay stopped.
+        if status != .unprepared, await !sdkFlags.stoppedByClient {
             try await start(retry: true)
         }
     }

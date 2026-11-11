@@ -39,8 +39,34 @@ vendor/zcash-swift-wallet-sdk/LocalPackages/
 *.xcarchive
 *.dSYM/
 *.xcresult
-.env
+.env*
+*.key
+*.pem
 
 # Leftovers from patching
 *.orig
 *.rej
+
+# Wallet database copies, logs and traces (never commit)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.log
+*.trace
+
+# Phone captures (recovery words, QR codes and addresses must never reach the repo)
+Screenshot*
+Screen Recording*
+IMG_*
+*.heic
+*.jpg
+*.jpeg
+*.mov
+*.mp4
+
+# Local tooling
+.venv/
+DerivedData/
+**/fuzz/corpus/
+**/fuzz/artifacts/

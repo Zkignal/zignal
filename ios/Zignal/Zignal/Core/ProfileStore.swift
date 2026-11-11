@@ -161,6 +161,11 @@ struct ProfileStore {
 
     // MARK: - Writing
 
+    /// The files to write, profiles being saved and carried ones together, in a random order.
+    static func writeOrder(_ updated: [URL: Data], _ carried: [URL: Data]) -> [(URL, Data)] {
+        (Array(updated) + Array(carried)).map { ($0.key, $0.value) }.shuffled()
+    }
+
     private func write(_ profiles: [(ProfileData, ProfileKeyset)]) throws {
         let existing = try profileFiles()
         // A new device key is only made when there are no files it would strand.
@@ -195,9 +200,11 @@ struct ProfileStore {
         var size = Self.minBucket
         while size < needed { size *= 2 }
 
-        // Profiles being saved go first; timestamps are evened out even if a write fails.
+        // Every file is written in a random order: each write makes a new file (atomic), so a
+        // fixed order would let file IDs show which profile was saved. Timestamps are evened
+        // out even if a write fails.
         defer { equalizeTimestamps() }
-        for (url, block) in Array(updated) + Array(carried) {
+        for (url, block) in Self.writeOrder(updated, carried) {
             let fill = try secureRandom(size - block.count)
             let sealed = try ChaChaPoly.seal(block + fill, using: deviceKey,
                                              authenticating: Self.outerAD).combined

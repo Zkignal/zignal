@@ -148,7 +148,6 @@ struct AddFundsView: View {
                             .background(.white, in: .rect(cornerRadius: 16))
                         Text(address)
                             .font(.footnote.monospaced())
-                            .textSelection(.enabled)
                             .multilineTextAlignment(.center)
                         Button(copied ? "Copied" : "Copy address", systemImage: "doc.on.doc") {
                             Clipboard.copy(address)

@@ -28,7 +28,8 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 11 | **A panic wipe that was cut short is finished the next time the decoy opens**, with the duress or the panic PIN. Every unlock stores the PIN vault again, and the Zcash SDK's one setting per wallet moves from the app's preferences into the wallet's own folder. | If the app was closed or the phone switched off during a wipe, the real wallet's database stayed on the phone until the panic PIN was entered again. The vault changed only on a panic wipe, so its change date in the Keychain dated the wipe. The app's preferences go into device backups and kept one entry for every wallet the app had opened. | |
+| Nov 11 | **Smaller fixes from the November reviews.** Profile files are written in a random order. The recovery words appear only once the app knows the screen isn't being recorded. Changing the server or Tor and then locking can't start a stopped wallet again, and a panic wipe waits for such a change to finish. Message text and the wallet address are copied only with Copy, which stays on this phone. | Each write makes a new file, so a fixed order let file IDs show which profile was saved. A recording already running could catch the words in its first frame. A server switch restarted the wallet even after a lock, so it could write a wiped profile's files again. Selected text went to the general pasteboard: other Apple devices, no expiry. | |
+| Nov 11 | **A panic wipe that was cut short is finished the next time the decoy opens**, with the duress or the panic PIN. Every unlock stores the PIN vault again, and the Zcash SDK's one setting per wallet moves from the app's preferences into the wallet's own folder. | If the app was closed or the phone switched off during a wipe, the real wallet's database stayed on the phone until the panic PIN was entered again. The vault changed only on a panic wipe, so its change date in the Keychain dated the wipe. The app's preferences go into device backups and kept one entry for every wallet the app had opened. | `0d6a1fc` |
 | Nov 11 | **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for the profile files. The wrong-PIN wait is measured on a clock that can't be set (`CLOCK_MONOTONIC_RAW`), not the date and time. | A copy of the Keychain taken off an unlocked phone held the vault as it was, so the PINs could be guessed offline: a 6-digit PIN within hours. Now the vault opens only on this phone, through the app. Moving the clock forward used to shorten the wait. | `adbf62f` |
 | Nov 9 | **Limits on what strangers can store.** Zignal's core keeps at most 32 contact requests and 64 incomplete multi-memo messages; the oldest go first. | Anyone with one of your addresses can send contact requests or partial messages for the price of a fee. Before, they were kept without a limit, and requests are saved with the profile. | `3f28c77` |
 | Nov 7 | **"Checking whether it went out…"** replaces the red "Not sent" for the few seconds after unlocking while the wallet checks a send that a lock cut short. | The message had usually gone out. "Not sent" was alarming and invited a needless tap. | `220eba7` |
@@ -52,7 +53,7 @@ Tested on `dev` (November 1 to 7, iPhone, Zcash mainnet):
   sent in airplane mode that went out once the network came back;
 - the recovery words hidden during a screen recording, and the warning after a screenshot.
 
-94 app tests and 2 UI tests pass.
+96 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -166,7 +167,7 @@ that's on the roadmap.
 | `zkw-ffi/` | Swift bindings for `zkw-core` (UniFFI) and the iOS XCFramework build script |
 | `ios/Zignal/` | SwiftUI iOS app: `Core/` (storage, vault, sessions, wallet), `UI/` (screens), `Generated/` (bindings) |
 | `ios/Zignal/scripts/` | Downloads and hash-checks the Zcash Sapling parameters bundled into the app |
-| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and on `dev` one more change), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
+| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and on `dev` two more changes), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
 
 ## Protocol at a glance
 
@@ -219,8 +220,9 @@ that's on the roadmap.
   open and could recreate a deleted wallet database). With the fixes, a stopped wallet stays
   stopped. Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`; both are reported
   upstream in [zcash/zcash-swift-wallet-sdk#2012](https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012).
-  On `dev`, one more change keeps the SDK's per-wallet record of its witness repair in the
-  wallet's own folder instead of the app's preferences.
+  On `dev`, two more changes: the SDK's per-wallet record of its witness repair is kept in
+  the wallet's own folder instead of the app's preferences, and a server switch no longer
+  restarts a wallet the app has stopped.
 
 ## How the app protects data on the phone
 
@@ -257,6 +259,9 @@ that's on the roadmap.
   the decoy opens, with the duress or the panic PIN, the wipe is finished.
 - Every successful unlock stores the vault again under a new seal, so its Keychain item
   changes on every unlock, not only when the panic PIN is used.
+- Changing the server or Tor can take a few seconds. If the profile locks meanwhile, the
+  wallet is stopped again when the change finishes (a server switch used to restart it),
+  and a panic wipe waits for the change like it waits for a wallet that is stopping.
 - The app never shows which profile is open.
 
 **Storage**
@@ -268,7 +273,8 @@ that's on the roadmap.
   is deleted with the wallet, and no longer an entry in the app's preferences, which go
   into device backups. The app deletes the old entries each time it starts.
 - Every save rewrites all profile files to one common size with the same timestamps, so the
-  files change together whichever profile is in use.
+  files change together whichever profile is in use. They're written in a random order:
+  each write makes a new file, so a fixed order could show which profile was saved.
 - Data is saved before anything is sent, so a crash can't cause message keys to be reused.
 - Profile files and wallet files use complete data protection and are excluded from device
   backups. Wallet file names are derived from each profile's key and don't say which profile
@@ -280,12 +286,86 @@ that's on the roadmap.
 - A cover window hides it, including open sheets and alerts, in the app switcher.
 - Third-party keyboards are blocked, and the message box has autocorrect off.
 - Received text is shown verbatim, never rendered as Markdown or links.
-- Copied invites and addresses stay on this phone (no Universal Clipboard) and clear after
-  five minutes.
+- Copied invites, addresses and message text stay on this phone (no Universal Clipboard)
+  and clear after five minutes. Message text and the wallet address can't be selected;
+  copy them with Copy (touch and hold a message).
+- The recovery words appear only once the app knows the screen isn't being recorded,
+  mirrored or shared, so a recording that's already running doesn't catch them.
 
 **Logging and network**
 - The app has no logging and no analytics, and the Zcash SDK's logging is turned off.
 - Its only network traffic is the wallet talking to the server you choose.
+
+## Network privacy: Tor, a VPN or your own server
+
+Zcash hides sender, recipient and amount on chain. Who connects to the server, from which IP
+address and when, is a separate problem, and the app can only solve part of it.
+
+**What the server sees**
+- **Tor off (the default):** the server you use sees your IP address with every request:
+  the transactions you send, the ones it fetches for you to read messages, and the blocks you
+  download. One server operator often sees the sender's IP address submit a transaction and
+  the recipient's IP address fetch it, which shows who writes to whom and when, even though
+  the messages stay encrypted.
+- **Tor on (in the network settings):** sending, fetching transactions, checking the server
+  and reading the chain tip go over Tor, so the server sees a Tor exit instead of your IP
+  address. Downloading blocks still connects directly: the server learns that you use Zcash
+  and when you sync, not which transactions are yours. Tor depends on no single company, but
+  it's slower.
+- **Your own server:** point Zignal at a lightwalletd you run, and no third party sees your
+  requests.
+
+**Compared with Zodl's relay (November 2026).** Zodl 3.20 sends its wallet requests through
+Oblivious HTTP: a relay run by Cloudflare or Fastly sees your IP address but not the request,
+and ZODL's gateway sees the request but not your IP address. Linking the two takes both
+companies working together. With Tor on, Zignal gets the same protection for sending and
+fetching, the requests that show which transactions are yours, in a different way. Block
+downloads aren't covered yet. Zignal doesn't use ZODL's relay code: it is licensed
+AGPL-3.0-only, with no permission for App Store distribution. Asking ZODL whether Zignal may
+use it is on the [roadmap](#roadmap-after-the-zecathon).
+
+**Using a VPN (recommended, with a kill switch and a no-logs provider).** Privacy-focused
+Zcash users should consider a VPN as well as Tor. Here is what changes.
+
+| Who | Without a VPN | With a VPN and a kill switch |
+|---|---|---|
+| Your internet provider or the Wi-Fi owner | Sees that you connect to a Zcash server, and when | Sees only an encrypted connection to the VPN |
+| The light server | Your IP address with every send, fetch and block download | The VPN's address for everything, block downloads included |
+| The VPN company | Not involved | Your IP address, which server you use, when and how much. Not the content: the connection to the server is encrypted |
+| The blockchain, a viewing-key holder, someone holding your phone | No change | No change |
+
+- **Turn on the VPN's kill switch.** Zignal's wallet reconnects by itself. If the VPN drops
+  without a kill switch, the next sync or send leaves from your real IP address, and one such
+  request is enough to link the VPN's address to you. On iPhone, choose a VPN whose kill
+  switch sends all traffic through the VPN (often called "include all networks" or "block
+  connections without VPN"), and check it's still on after every VPN app update.
+- **Choose a no-logs provider, and check the claim.** A VPN sees your real IP address next to
+  every server you talk to, so its records matter more than anyone else's. Look for:
+  - a no-logs policy that an independent firm has audited recently, with the report
+    published;
+  - a record of what the company handed over when it received legal requests (a transparency
+    report, or a court case where nothing was there to hand over);
+  - payment without your name: cash or cryptocurrency, an account number instead of an email
+    address;
+  - servers that keep nothing on disk (RAM-only), and a jurisdiction you're comfortable with.
+
+  "No logs" in an advert proves nothing; an audit and a track record are evidence, not proof.
+- **Use a shared address, not a dedicated one.** Many users behind the same VPN address hide
+  each other. A dedicated or static address becomes a fixed identity the server can follow.
+- **What a VPN doesn't do.** Every request from your phone comes from the same VPN address,
+  so the server can still group your own requests together ("this user sent A, fetched B,
+  synced at 9 PM") without knowing who you are. A VPN company that keeps logs, or is ordered
+  to, and a server operator who cooperates could link you. A VPN changes nothing on the
+  blockchain, nothing a viewing-key holder sees, and nothing for someone holding your
+  unlocked phone.
+- **The strongest setup today: a VPN with a kill switch, plus Tor on in Zignal.** Your
+  internet provider sees only the VPN. The VPN sees only Tor traffic for sends and fetches.
+  The server sees Tor for sends and fetches and the VPN's address for block downloads. No
+  single party sees your IP address together with your transactions. The cost is speed:
+  syncing and sending are slower.
+- **Your own server at home:** a kill switch that blocks local network access also blocks a
+  server on your home network. Either allow local network access in the VPN app, or reach
+  your server through the VPN.
 
 ## Build and test
 
@@ -320,20 +400,20 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 94 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 96 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
     test for each unlock step;
   - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
     install's Keychain items under it, a move cut short, and a sealed vault winning over an
     older plain copy after a panic wipe, and a new seal each time the vault is stored;
   - the wrong-PIN wait after a restart and with state saved by older versions;
-  - storage encryption and tamper checks, what a silent wipe leaves behind, and a wipe cut
-    short being finished later with the usual two profile files;
+  - storage encryption and tamper checks, the random write order, what a silent wipe leaves
+    behind, and a wipe cut short being finished later with the usual two profile files;
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
     the core, and copying an invite as text;
-  - memo filtering, wallet settings and messages, waiting for stopped wallets, and removing
-    the SDK's old entries from the app's preferences;
+  - memo filtering, wallet settings and messages, waiting for stopped wallets and for
+    settings changes, and removing the SDK's old entries from the app's preferences;
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
     transaction and shown as "Checking" until the wallet has looked; and reading a chat's first
     message before the rest.
@@ -353,7 +433,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   and which transactions are yours: the ones you send and the ones it fetches for you to read.
   That links who messaged when to an IP, even though the contents stay encrypted. The Zcash
   SDK's Tor covers sending and fetching; downloading blocks still connects directly. Your own
-  server removes the third party entirely.
+  server removes the third party entirely. A VPN with a kill switch and a no-logs provider,
+  together with Tor, covers the rest (see
+  [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
 - **Tor and certificates:** with Tor on, the server's certificate is checked by the Zcash SDK's
   own code, not by iOS. The Zecathon build (`main`, SDK 3.0.0) still trusts eight certificate
   authorities whose keys leaked in October 2026. iOS itself already blocks them, so Tor off
@@ -475,9 +557,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   capture and limiting stored contact requests are done on `dev`.
 - **From the November reviews:** a panic wipe that leaves the wallet folder looking the same.
   The PIN vault sealed by the Secure Enclave, a wrong-PIN wait that doesn't follow the
-  clock, and finishing a panic wipe that was cut short are done on `dev`.
+  clock, finishing a panic wipe that was cut short, and the smaller fixes of November 11
+  are done on `dev`.
 - **Faster first sync:** recent checkpoints, so a new wallet starts near the chain tip instead
   of scanning from mid-2026.
+- **Ask ZODL** whether Zignal may use its Oblivious HTTP relay (client, relays and
+  gateway), or on what terms (see [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
 - **Tor library update**, once librustzcash moves to a current arti
   ([zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246)).
 - **Later:** post-quantum protection for every message (not only the handshake), and Android.
@@ -518,6 +603,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-09 | `9df2f92` | `dev`: CHANGELOG.md and SECURITY.md (private vulnerability reporting) |
 | 2026-11-09 | `31280e6` | `dev`: README lists what the November reviews found and what's planned |
 | 2026-11-11 | `adbf62f` | `dev`: PIN vault and device key sealed by the Secure Enclave; wrong-PIN wait on the boot clock |
+| 2026-11-11 | `0d6a1fc` | `dev`: interrupted panic wipes finished; vault resealed on every unlock; SDK setting out of backups |
 
 ## Credits
 
@@ -527,8 +613,8 @@ libraries:
 - **Zcash Swift SDK** ([ZcashLightClientKit](https://github.com/zcash/zcash-swift-wallet-sdk),
   MIT, Znewco, Inc. (Zcash Open Development Lab), maintained in the `zcash` GitHub
   organization): wallet sync, keys, addresses and transactions. Release 3.0.0 is
-  included in `vendor/` under its own MIT license, with Zignal's two fixes (and on `dev` one
-  more change) and, on `dev` and `nu7`, its Rust layer rebuilt on the NU7 crates, all
+  included in `vendor/` under its own MIT license, with Zignal's two fixes (and on `dev` two
+  more changes) and, on `dev` and `nu7`, its Rust layer rebuilt on the NU7 crates, all
   listed in `ZIGNAL-PATCHES.md`. It includes
   **[librustzcash](https://github.com/zcash/librustzcash)** (MIT/Apache-2.0) and
   **[arti](https://gitlab.torproject.org/tpo/core/arti)** (Tor in Rust, MIT/Apache-2.0).

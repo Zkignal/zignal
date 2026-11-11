@@ -136,15 +136,23 @@ final class WalletEngine {
         settings = newSettings
         guard let sync = synchronizer else { return }
         do {
-            if newSettings.torEnabled != old.torEnabled {
-                try await sync.tor(enabled: newSettings.torEnabled)
-            }
-            if let server = newSettings.servers.first, server != old.servers.first {
-                try await sync.switchTo(endpoint: Self.endpoint(server))
+            // Counted like a wallet winding down, so a silent wipe waits for it: these calls can
+            // still write the wallet's files after a lock.
+            try await WalletShutdown.track {
+                if newSettings.torEnabled != old.torEnabled {
+                    try await sync.tor(enabled: newSettings.torEnabled)
+                }
+                guard synchronizer === sync else { return } // locked meanwhile
+                if let server = newSettings.servers.first, server != old.servers.first {
+                    try await sync.switchTo(endpoint: Self.endpoint(server))
+                }
             }
         } catch {
-            phase = .failed(AppModel.describe(error))
+            if synchronizer === sync { phase = .failed(AppModel.describe(error)) }
         }
+        // Locked while the settings were applied: a server switch restarts the SDK, so stop
+        // this wallet again.
+        if synchronizer !== sync { WalletShutdown.begin { await sync.stopAndWait() } }
     }
 
     // MARK: - Reading
@@ -485,15 +493,24 @@ struct WalletFiles {
 /// anything, so a wallet that is still winding down can't write the wiped profile's files again.
 @MainActor
 enum WalletShutdown {
-    private static var pending: [UUID: Task<Void, Never>] = [:]
+    private static var pending: Set<UUID> = []
 
     /// Runs `stop` and keeps track of it until it returns.
     static func begin(_ stop: @escaping @MainActor () async -> Void) {
         let id = UUID()
-        pending[id] = Task {
+        pending.insert(id)
+        Task {
             await stop()
-            pending[id] = nil
+            pending.remove(id)
         }
+    }
+
+    /// Runs `work` and keeps track of it until it returns or throws, like a wallet winding down.
+    static func track(_ work: @MainActor () async throws -> Void) async rethrows {
+        let id = UUID()
+        pending.insert(id)
+        defer { pending.remove(id) }
+        try await work()
     }
 
     /// True while a stopped wallet is still winding down.

@@ -10,7 +10,9 @@ struct RecoveryPhraseView: View {
     @State private var words: [String] = []
     @State private var errorText: String?
     @State private var checking = false
-    @State private var screenCaptured = false
+    /// Starts true: the words stay hidden until the watcher has reported the capture state, so
+    /// a recording that's already running can't catch them in its first frame.
+    @State private var screenCaptured = true
     @State private var screenshotTaken = false
     @FocusState private var focused: Bool
 
@@ -29,6 +31,8 @@ struct RecoveryPhraseView: View {
             }
             .navigationTitle("Recovery phrase")
             .navigationBarTitleDisplayMode(.inline)
+            // On the whole view, so the state is known before the words can appear.
+            .background(ScreenCaptureWatcher(isCaptured: $screenCaptured))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -107,7 +111,6 @@ struct RecoveryPhraseView: View {
             .padding()
         }
         .privacySensitive()
-        .background(ScreenCaptureWatcher(isCaptured: $screenCaptured))
         .onScreenshot {
             if !screenCaptured { screenshotTaken = true }
         }

@@ -107,6 +107,21 @@ struct AttemptLimiterTests {
 }
 
 struct ProfileStoreTests {
+    /// Each write makes a new file, so a fixed order would let file IDs show which profile
+    /// was saved. The saved profile's file is not always written first.
+    @Test func filesAreWrittenInARandomOrder() {
+        let saved = URL(fileURLWithPath: "/tmp/saved")
+        let other = URL(fileURLWithPath: "/tmp/other")
+        var savedFirst = 0
+        for _ in 0..<200 {
+            let order = ProfileStore.writeOrder([saved: Data([1])], [other: Data([2])])
+            #expect(Set(order.map { $0.0 }) == [saved, other])
+            if order.first?.0 == saved { savedFirst += 1 }
+        }
+        // Each order has a 1 in 2^199 chance of never showing up by luck.
+        #expect(savedFirst > 0 && savedFirst < 200)
+    }
+
     @Test func garbageBlockIsRejected() throws {
         let key = SymmetricKey(size: .bits256)
         #expect(throws: ZignalError.self) { try ProfileStore.openBlock(Data(count: 8), key: key) }
@@ -1212,6 +1227,29 @@ struct WalletShutdownTests {
         #expect(!settled)
         await WalletShutdown.waitForAll(timeout: .seconds(5))
         #expect(!WalletShutdown.isBusy)
+    }
+
+    /// Settings changes can outlast a lock and still write wallet files, so a wipe waits for
+    /// them too, and a failed one doesn't leave the wipe waiting.
+    @Test func trackedSettingsWorkCountsAsWindingDown() async {
+        struct Refused: Error {}
+        let finished = Flag()
+        let work = Task { @MainActor in
+            await WalletShutdown.track {
+                try? await Task.sleep(for: .milliseconds(100))
+                finished.isSet = true
+            }
+        }
+        await Task.yield()
+        let settled = await WalletShutdown.waitForAll(timeout: .seconds(5))
+        #expect(settled)
+        #expect(finished.isSet)
+        await work.value
+
+        await #expect(throws: Refused.self) {
+            try await WalletShutdown.track { throw Refused() }
+        }
+        #expect(await WalletShutdown.waitForAll(timeout: .seconds(5)))
     }
 }
 

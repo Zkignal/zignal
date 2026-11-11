@@ -226,7 +226,8 @@ struct RestorePhraseView: View {
     @State private var created = Date()
     @State private var restored: RestoredProfile?
     @State private var errorText: String?
-    @State private var screenCaptured = false
+    /// Starts true: the field stays hidden until the watcher has reported the capture state.
+    @State private var screenCaptured = true
     @State private var screenshotTaken = false
 
     /// Sapling activation (2018-10-29). No Zcash shielded wallet can be older.

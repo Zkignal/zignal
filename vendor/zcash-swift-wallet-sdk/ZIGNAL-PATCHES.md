@@ -134,3 +134,20 @@ the repair once more after the update (the repair is idempotent).
 Files: `Sources/ZcashLightClientKit/Utils/WitnessesFixGate.swift`,
 `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
+
+## Change: a server switch doesn't restart a stopped synchronizer (Zignal `dev` only)
+
+**Problem.** `SDKSynchronizer.switchTo(endpoint:)` validates the new server (a network call
+that can take seconds), rebuilds the services, and then calls `start(retry: true)` whenever
+the synchronizer is prepared. If the app stopped the synchronizer meanwhile (Zignal stops it
+when the profile locks), the switch started it again. A wallet the app had stopped could keep
+syncing and writing its files, including after a silent wipe had deleted them.
+
+**Change.** `SDKFlags` gets `stoppedByClient`, set by `stop()` and `stopAndWait()` (through
+`sdkStopped()`) and cleared by the client's next `start(retry:)` (through `sdkStarted()`).
+`switchTo` restarts only while it's false. The app also stops the wallet again if it was
+locked while settings were being applied, and counts that work as a wallet winding down.
+
+Files: `Sources/ZcashLightClientKit/Utils/SDKFlags.swift`,
+`Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
+spot is marked `Zignal patch`. Not on the `nu7` branch.

@@ -245,13 +245,18 @@ private struct MessageBubble: View {
             if message.outgoing { Spacer(minLength: 48) }
             VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 4) {
                 // Text(String) renders verbatim: no Markdown, so received text can't inject links.
+                // No text selection: its Copy goes to the general pasteboard (other devices, no
+                // expiry). This Copy stays on this device and clears after 5 minutes.
                 Text(message.text)
-                    .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .foregroundStyle(message.outgoing ? Color.white : Color.primary)
                     .background(message.outgoing ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
                                 in: .rect(cornerRadius: 16))
+                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 16))
+                    .contextMenu {
+                        Button("Copy", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
+                    }
                 if showsStatus && checking {
                     Label("Checking whether it went out…", systemImage: "clock")
                         .font(.caption2)
