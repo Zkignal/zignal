@@ -28,6 +28,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 11 | **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for the profile files. The wrong-PIN wait is measured on a clock that can't be set (`CLOCK_MONOTONIC_RAW`), not the date and time. | A copy of the Keychain taken off an unlocked phone held the vault as it was, so the PINs could be guessed offline: a 6-digit PIN within hours. Now the vault opens only on this phone, through the app. Moving the clock forward used to shorten the wait. | |
 | Nov 9 | **Limits on what strangers can store.** Zignal's core keeps at most 32 contact requests and 64 incomplete multi-memo messages; the oldest go first. | Anyone with one of your addresses can send contact requests or partial messages for the price of a fee. Before, they were kept without a limit, and requests are saved with the profile. | `3f28c77` |
 | Nov 7 | **"Checking whether it went out…"** replaces the red "Not sent" for the few seconds after unlocking while the wallet checks a send that a lock cut short. | The message had usually gone out. "Not sent" was alarming and invited a needless tap. | `220eba7` |
 | Nov 7 | **The recovery words are hidden while the screen is recorded, mirrored or shared**, on the recovery phrase screen and in the restore field. A screenshot taken while they show brings up a warning to delete it. | A screen recording, AirPlay or screen sharing in a call would otherwise capture all 24 words. iOS can't block screenshots, so the app warns instead. | `d9ff597` |
@@ -50,7 +51,7 @@ Tested on `dev` (November 1 to 7, iPhone, Zcash mainnet):
   sent in airplane mode that went out once the network came back;
 - the recovery words hidden during a screen recording, and the warning after a screenshot.
 
-77 app tests and 2 UI tests pass.
+89 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -224,10 +225,20 @@ that's on the roadmap.
 - Your unlock, duress and panic PINs each open one slot in a fixed-size, three-slot vault
   (Argon2id, 64 MiB). Each attempt runs Argon2id once and then tries every slot, so all three
   PINs take the same time and nothing on disk says which slot is which.
-- The vault is stored in the Keychain, readable only while the phone is unlocked, and never
-  synced or moved to another device.
-- Wrong PINs trigger a growing wait, shown as a live countdown, and force-quitting the app
-  doesn't reset the count.
+- The vault is stored in the Keychain (this device only, never synced), encrypted to a P-256
+  key in the iPhone's Secure Enclave: ECDH with a fresh ephemeral key, HKDF-SHA256, then
+  AES-GCM. The Secure Enclave key never leaves the chip and works only on this phone, while
+  it's unlocked, for this app. So a copy of the Keychain taken off the phone can't be opened,
+  and the PINs can't be guessed offline from it.
+- An install from before this change seals its vault the first time it opens and its device
+  key at the first unlock, without asking for a PIN. Each old copy is deleted only after the
+  sealed one has been read back and opened.
+- 5 wrong PINs are free; after that, each try waits 30 seconds, doubling up to 1 hour, shown
+  as a live countdown. Each try is counted in the Keychain before the PIN is checked, so
+  force-quitting the app doesn't reset the count. The wait is measured on
+  `CLOCK_MONOTONIC_RAW`, which keeps counting while the phone sleeps and can't be set, so
+  changing the date or time doesn't shorten it. A restart can start the wait over but never
+  shortens it.
 
 **Duress and panic**
 - The duress PIN opens a decoy profile that looks and works like a normal one, with its own
@@ -242,7 +253,8 @@ that's on the roadmap.
 
 **Storage**
 - Each profile's data is sealed under that profile's own key, inside a second layer sealed
-  under a device key.
+  under a random 32-byte device key. The device key is stored in the Keychain sealed by the
+  Secure Enclave, the same way as the vault.
 - Every save rewrites all profile files to one common size with the same timestamps, so the
   files change together whichever profile is in use.
 - Data is saved before anything is sent, so a crash can't cause message keys to be reused.
@@ -296,9 +308,13 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 77 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 89 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
     test for each unlock step;
+  - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
+    install's Keychain items under it, a move cut short, and a sealed vault winning over an
+    older plain copy after a panic wipe;
+  - the wrong-PIN wait after a restart and with state saved by older versions;
   - storage encryption and tamper checks, and what a silent wipe leaves behind;
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
@@ -360,9 +376,11 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   file protection. A forensic image of an unlocked phone could tell which wallet has history.
 - **Seed in memory:** while a profile is unlocked, its wallet seed stays in memory to sign
   sends. Swift can't reliably wipe memory after lock; the Rust core wipes its own copies.
-- **PIN strength:** a 6-digit PIN can be brute-forced offline by someone who extracts the
-  Keychain from an unlocked phone. Use 8 or more digits for real use.
-- **Clock:** moving the phone's clock forward shortens the wrong-PIN wait.
+- **PIN strength:** with a copy of the Keychain, PINs can only be tried on the phone itself,
+  through the app: about a second per try, plus the wrong-PIN wait. Someone who can run their
+  own code inside Zignal on an unlocked phone (through an iOS exploit) could open the seal
+  and then guess offline as before: a 6-digit PIN within hours. Use 8 or more digits for real
+  use. Each extra digit multiplies the work by 10, and Zignal accepts up to 16.
 - **Decoy realism:** a decoy profile is only convincing if it's used now and then and holds
   a little ZEC.
 - **Panic PIN:**
@@ -385,13 +403,14 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   Someone examining the phone's files can then see that only the open profile has a wallet.
   Many phones look like that anyway (a profile's wallet only appears once it's opened), but
   next to a decoy wallet created minutes earlier it can suggest a wipe. A fix is planned.
-- **PINs against a forensic copy:** the vault is stored in the Keychain, readable only while
-  the phone is unlocked. If forensic tools copy it off the phone, a 6-digit PIN can be
-  guessed offline within hours, and so can the duress and panic PINs. Longer PINs help: each
-  extra digit multiplies the work by 10, and Zignal accepts up to 16. Binding the vault to
-  the iPhone's Secure Enclave, so PINs can only be tried on the phone itself, is planned.
-- **Wrong-PIN wait:** it follows the phone's clock, so someone who can change the clock on
-  an unlocked phone can skip it. A wait that doesn't depend on the clock is planned.
+- **PINs against a forensic copy:** the vault and the device key are sealed by a key in this
+  iPhone's Secure Enclave, so a copy of the Keychain taken off the phone can't be opened
+  anywhere else, and the PINs can't be guessed offline from it. Tools that can run code as
+  Zignal on the unlocked phone could still open the seal (see PIN strength). Debug builds on
+  a device without a Secure Enclave (some Simulators) keep the sealing key in the Keychain
+  instead; release builds refuse to set up there.
+- **Wrong-PIN wait after a restart:** restarting the phone during a wait can start the wait
+  over. It never ends it early.
 - **Recovery words on screen:** they're hidden while the screen is recorded, mirrored or
   shared. iOS can't block screenshots or stop a camera pointed at the screen: after a
   screenshot the app warns you to delete it, and nothing can detect a camera.
@@ -438,9 +457,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Hardening from our review:** one-time prekeys for the first message, show when a contact
   resets a chat, and let users revoke unused invites. Hiding the recovery words during screen
   capture and limiting stored contact requests are done on `dev`.
-- **From the November reviews:** a panic wipe that leaves the wallet folder looking the same,
-  the PIN vault bound to the Secure Enclave, and a wrong-PIN wait that doesn't follow the
-  clock.
+- **From the November reviews:** a panic wipe that leaves the wallet folder looking the same.
+  The PIN vault sealed by the Secure Enclave and a wrong-PIN wait that doesn't follow the
+  clock are done on `dev`.
 - **Faster first sync:** recent checkpoints, so a new wallet starts near the chain tip instead
   of scanning from mid-2026.
 - **Tor library update**, once librustzcash moves to a current arti
@@ -481,6 +500,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-09 | `3f28c77` | `dev`: limits on stored contact requests and incomplete messages |
 | 2026-11-09 | `c6a9e82` | `dev`: README lists the new changes, the November tests and two screenshots |
 | 2026-11-09 | `9df2f92` | `dev`: CHANGELOG.md and SECURITY.md (private vulnerability reporting) |
+| 2026-11-09 | `31280e6` | `dev`: README lists what the November reviews found and what's planned |
 
 ## Credits
 

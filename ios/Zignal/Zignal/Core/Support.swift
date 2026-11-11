@@ -6,6 +6,7 @@ import Security
 enum ZignalError: LocalizedError {
     case randomUnavailable
     case keychain(OSStatus)
+    case noSecureEnclave
     case damagedProfile
     case messageTooLong
     case invalidRecoveryPhrase
@@ -22,6 +23,7 @@ enum ZignalError: LocalizedError {
         switch self {
         case .randomUnavailable: "The system random number generator is unavailable."
         case .keychain: "The Keychain is unavailable. Unlock your phone and try again."
+        case .noSecureEnclave: "This device has no Secure Enclave, so Zignal can't protect your PINs on it."
         case .damagedProfile: "Saved data could not be decrypted. It may be damaged."
         case .messageTooLong: "This message is too long. Split it into shorter messages."
         case .invalidRecoveryPhrase: "That isn't a valid 24-word recovery phrase. Check each word."

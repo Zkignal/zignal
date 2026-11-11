@@ -18,6 +18,16 @@ private func fileNames(_ store: ProfileStore) throws -> [String] {
     try FileManager.default.contentsOfDirectory(atPath: store.directory.path).sorted()
 }
 
+/// Device secrets under a throwaway Keychain service, removed afterwards, so tests never touch
+/// the app's own Keychain items. Where there is a Secure Enclave, they use it.
+private func withTestSecrets(useSecureEnclave: Bool = SecureEnclave.isAvailable,
+                             _ body: (DeviceSecrets) throws -> Void) throws {
+    let secrets = DeviceSecrets(service: "zignal-tests-\(UUID().uuidString)",
+                                useSecureEnclave: useSecureEnclave)
+    defer { try? secrets.removeAll() }
+    try body(secrets)
+}
+
 struct ClipboardTests {
     @Test @MainActor func copiedInviteReadsBackAsText() {
         Clipboard.copy("zignal:test-invite")
@@ -50,16 +60,43 @@ struct PinPolicyTests {
 }
 
 struct AttemptLimiterTests {
+    private static let second: UInt64 = 1_000_000_000
+
     @Test func freeAttemptsThenDoublingWait() {
-        let now = Date()
-        func wait(_ failures: Int, after seconds: TimeInterval = 0) -> TimeInterval {
-            AttemptLimiter.waitTime(.init(failures: failures, last: now), now: now + seconds)
+        let now = 500 * Self.second
+        func wait(_ failures: Int, after seconds: UInt64 = 0) -> TimeInterval {
+            AttemptLimiter.waitTime(.init(failures: failures, uptime: now),
+                                    now: now + seconds * Self.second)
         }
         #expect(wait(4) == 0)
         #expect(abs(wait(5) - 30) < 0.01)
         #expect(abs(wait(6) - 60) < 0.01)
         #expect(abs(wait(40) - 3600) < 0.01)
+        #expect(abs(wait(5, after: 10) - 20) < 0.01)
         #expect(wait(5, after: 31) == 0)
+    }
+
+    /// The clock starts again after a restart, below the saved stamp: the wait starts over.
+    @Test func aRestartStartsTheWaitOver() {
+        let saved = AttemptLimiter.State(failures: 6, uptime: 9_000 * Self.second)
+        let now = 20 * Self.second
+        #expect(abs(AttemptLimiter.waitTime(saved, now: now) - 60) < 0.01)
+        let restarted = AttemptLimiter.normalized(saved, now: now)
+        #expect(restarted.failures == 6)
+        #expect(restarted.uptime == now)
+        #expect(abs(AttemptLimiter.waitTime(restarted, now: now + 50 * Self.second) - 10) < 0.01)
+    }
+
+    /// Older versions saved a date, which moving the clock forward could skip.
+    @Test func stateSavedWithADateWaitsFromNow() throws {
+        let old = Data(#"{"failures":7,"last":815000000}"#.utf8)
+        let state = try JSONDecoder().decode(AttemptLimiter.State.self, from: old)
+        #expect(state.failures == 7)
+        #expect(state.uptime == nil)
+        let now = 1_000 * Self.second
+        #expect(abs(AttemptLimiter.waitTime(state, now: now) - 120) < 0.01)
+        #expect(AttemptLimiter.normalized(state, now: now).uptime == now)
+        #expect(AttemptLimiter.normalized(AttemptLimiter.State(), now: now).uptime == nil)
     }
 
     @Test func waitMessageCountsDownInMinutesAndSeconds() {
@@ -149,6 +186,158 @@ struct ProfileStoreTests {
     @Test func missingFileLoadsAsNil() throws {
         let store = try makeTempStore()
         #expect(try store.load(ProfileKeyset(secret: secureRandom(32))) == nil)
+    }
+}
+
+struct DeviceSecretsTests {
+    private static let vaultLabel = Data("zkw/app/sealed-vault/v1".utf8)
+
+    @Test func sealedDataOpensOnlyWithItsKeyAndLabel() throws {
+        let key = DeviceSecrets.SealKey.software(P256.KeyAgreement.PrivateKey())
+        let secret = try secureRandom(3176)
+        let sealed = try DeviceSecrets.seal(secret, to: key, label: Self.vaultLabel)
+        #expect(sealed.count == 1 + 65 + 12 + secret.count + 16)
+        #expect(try DeviceSecrets.open(sealed, with: key, label: Self.vaultLabel) == secret)
+        // A fresh ephemeral key each time, so sealing again gives different bytes.
+        #expect(try DeviceSecrets.seal(secret, to: key, label: Self.vaultLabel) != sealed)
+
+        var tampered = sealed
+        tampered[tampered.count - 1] ^= 0x01
+        #expect(throws: DeviceSecrets.Unreadable.self) {
+            try DeviceSecrets.open(tampered, with: key, label: Self.vaultLabel)
+        }
+        #expect(throws: DeviceSecrets.Unreadable.self) {
+            try DeviceSecrets.open(sealed, with: key, label: Data("zkw/app/sealed-file-key/v1".utf8))
+        }
+        let otherKey = DeviceSecrets.SealKey.software(P256.KeyAgreement.PrivateKey())
+        #expect(throws: DeviceSecrets.Unreadable.self) {
+            try DeviceSecrets.open(sealed, with: otherKey, label: Self.vaultLabel)
+        }
+        #expect(throws: DeviceSecrets.Unreadable.self) {
+            try DeviceSecrets.open(Data(sealed.prefix(90)), with: key, label: Self.vaultLabel)
+        }
+    }
+
+    @Test func secretsAreStoredSealed() throws {
+        try withTestSecrets { secrets in
+            let vault = try Data("ZWV2".utf8) + secureRandom(3172)
+            try secrets.write(vault, to: .vault)
+            #expect(try secrets.read(.vault) == vault)
+            let stored = try #require(try Keychain.read(.sealedVault, service: secrets.service))
+            #expect(stored.range(of: vault.prefix(64)) == nil)
+            #expect(try Keychain.read(.vault, service: secrets.service) == nil)
+            #expect(try Keychain.read(.sealKey, service: secrets.service) != nil)
+        }
+    }
+
+    @Test func plainItemsFromOlderVersionsMoveUnderTheSeal() throws {
+        try withTestSecrets { secrets in
+            let vault = try secureRandom(3176)
+            let fileKey = try secureRandom(32)
+            try Keychain.write(vault, to: .vault, service: secrets.service)
+            try Keychain.write(fileKey, to: .fileKey, service: secrets.service)
+            #expect(try secrets.read(.vault) == vault)
+            #expect(try secrets.read(.fileKey) == fileKey)
+            #expect(try Keychain.read(.vault, service: secrets.service) == nil)
+            #expect(try Keychain.read(.fileKey, service: secrets.service) == nil)
+            #expect(try Keychain.read(.sealedVault, service: secrets.service) != nil)
+            #expect(try Keychain.read(.sealedFileKey, service: secrets.service) != nil)
+            #expect(try secrets.read(.vault) == vault)
+            #expect(try secrets.read(.fileKey) == fileKey)
+        }
+    }
+
+    @Test func aMoveCutShortIsFinishedNextTime() throws {
+        try withTestSecrets { secrets in
+            // Cut short after the sealed copy was written: both copies are there.
+            let vault = try secureRandom(3176)
+            try secrets.write(vault, to: .vault)
+            try Keychain.write(vault, to: .vault, service: secrets.service)
+            #expect(try secrets.read(.vault) == vault)
+            #expect(try Keychain.read(.vault, service: secrets.service) == nil)
+
+            // Cut short before the sealed copy could be checked: it doesn't open.
+            let fileKey = try secureRandom(32)
+            try Keychain.write(fileKey, to: .fileKey, service: secrets.service)
+            try Keychain.write(try secureRandom(128), to: .sealedFileKey, service: secrets.service)
+            #expect(try secrets.read(.fileKey) == fileKey)
+            #expect(try Keychain.read(.fileKey, service: secrets.service) == nil)
+            #expect(try secrets.read(.fileKey) == fileKey)
+        }
+    }
+
+    /// After a panic wipe the sealed vault is the newer one; a plain copy from before must never
+    /// come back.
+    @Test func theSealedCopyWinsOverAStalePlainOne() throws {
+        try withTestSecrets { secrets in
+            let before = try secureRandom(3176)
+            let wiped = try secureRandom(3176)
+            try secrets.write(wiped, to: .vault)
+            try Keychain.write(before, to: .vault, service: secrets.service)
+            #expect(try secrets.read(.vault) == wiped)
+            #expect(try Keychain.read(.vault, service: secrets.service) == nil)
+        }
+    }
+
+    @Test func aSealedItemThatDoesntOpenIsDamaged() throws {
+        try withTestSecrets { secrets in
+            try secrets.write(try secureRandom(32), to: .fileKey)
+            try Keychain.write(try secureRandom(3269), to: .sealedVault, service: secrets.service)
+            #expect(throws: ZignalError.self) { try secrets.read(.vault) }
+        }
+    }
+
+    /// A new key would strand the vault, so writing refuses and reading reports damage.
+    @Test func noNewKeyWhileSomethingIsSealed() throws {
+        try withTestSecrets { secrets in
+            try secrets.write(try secureRandom(3176), to: .vault)
+            try Keychain.delete(.sealKey, service: secrets.service)
+            #expect(throws: ZignalError.self) { try secrets.write(try secureRandom(32), to: .fileKey) }
+            #expect(throws: ZignalError.self) { try secrets.read(.vault) }
+            #expect(try Keychain.read(.sealKey, service: secrets.service) == nil)
+        }
+    }
+
+    @Test func theKeyComesFromTheSecureEnclaveWhenThereIsOne() throws {
+        try withTestSecrets(useSecureEnclave: false) { secrets in
+            try secrets.write(Data([1, 2, 3]), to: .fileKey)
+            #expect(try secrets.read(.fileKey) == Data([1, 2, 3]))
+            #expect(try Keychain.read(.sealKey, service: secrets.service)?.first == 2)
+        }
+        guard SecureEnclave.isAvailable else { return }
+        try withTestSecrets(useSecureEnclave: true) { secrets in
+            try secrets.write(Data([1, 2, 3]), to: .fileKey)
+            #expect(try secrets.read(.fileKey) == Data([1, 2, 3]))
+            #expect(try Keychain.read(.sealKey, service: secrets.service)?.first == 1)
+        }
+    }
+
+    @Test func removeAllLeavesNothingBehind() throws {
+        try withTestSecrets { secrets in
+            try secrets.write(try secureRandom(3176), to: .vault)
+            try secrets.write(try secureRandom(32), to: .fileKey)
+            try Keychain.write(Data([1]), to: .vault, service: secrets.service)
+            try secrets.removeAll()
+            for item in [Keychain.Item.vault, .fileKey, .sealKey, .sealedVault, .sealedFileKey] {
+                #expect(try Keychain.read(item, service: secrets.service) == nil)
+            }
+            #expect(try secrets.read(.vault) == nil)
+        }
+    }
+
+    @Test func profileFilesUseASealedDeviceKey() throws {
+        try withTestSecrets { secrets in
+            let dir = FileManager.default.temporaryDirectory
+                .appending(path: "zignal-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let store = ProfileStore(directory: dir, deviceKeySource: .keychain(secrets))
+            try store.prepare()
+            let keys = try ProfileKeyset(secret: secureRandom(32))
+            try store.save(ProfileData(inbox: Data([5])), keys)
+            #expect(try store.load(keys)?.inbox == Data([5]))
+            #expect(try Keychain.read(.fileKey, service: secrets.service) == nil)
+            #expect(try Keychain.read(.sealedFileKey, service: secrets.service) != nil)
+        }
     }
 }
 

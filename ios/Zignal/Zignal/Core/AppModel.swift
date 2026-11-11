@@ -17,8 +17,9 @@ final class AppModel {
 
     private(set) var phase: Phase = .starting
     private(set) var busy = false
-    /// Set after too many wrong PINs: no PIN is checked before this time.
-    private(set) var lockedUntil: Date?
+    /// Set after too many wrong PINs: no PIN is checked before this time on `BootClock`, which
+    /// changing the date or time doesn't move.
+    private(set) var lockedUntil: UInt64?
     var errorText: String?
 
     @ObservationIgnored private let store: ProfileStore
@@ -43,7 +44,9 @@ final class AppModel {
                 defaults.set(true, forKey: Self.installedKey)
             }
             try store.prepare()
-            phase = try Keychain.read(.vault) == nil ? .setup : .locked
+            // Reading the vault also moves an older install's Keychain items under the
+            // Secure Enclave seal (DeviceSecrets).
+            phase = try DeviceSecrets.app.read(.vault) == nil ? .setup : .locked
         } catch {
             // Usually the Keychain is unavailable because the phone is still locked.
             // unlock() reads the vault again.
@@ -73,9 +76,10 @@ final class AppModel {
                                                   restoredSecret: restoredSecret)
                 let realKeys = try ProfileKeyset(secret: created.realSecret)
                 let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
-                // Fresh device key, and both profiles written together so they look alike
-                // from day one. Anything left from an earlier, unfinished setup is removed.
-                try Keychain.delete(.fileKey)
+                // Fresh device key and Secure Enclave key, and both profiles written together
+                // so they look alike from day one. Anything left from an earlier, unfinished
+                // setup is removed.
+                try DeviceSecrets.app.removeAll()
                 try store.prepare()
                 try store.reset(with: [
                     (ProfileSession.emptyData(keys: realKeys, walletCreated: walletCreated,
@@ -83,7 +87,7 @@ final class AppModel {
                     (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
                 ])
                 // The vault is stored last: if anything above fails, setup simply runs again.
-                try Keychain.write(created.vault, to: .vault)
+                try DeviceSecrets.app.write(created.vault, to: .vault)
                 return (realKeys, try walletSeed(profileSecret: created.realSecret))
             }.value
             UserDefaults.standard.set(true, forKey: Self.installedKey)
@@ -106,7 +110,7 @@ final class AppModel {
         do {
             // The unlock screen shows a countdown while this is set.
             guard try updateLockout() == nil else { return }
-            guard let vault = try Keychain.read(.vault) else {
+            guard let vault = try DeviceSecrets.app.read(.vault) else {
                 phase = .setup
                 return
             }
@@ -117,7 +121,7 @@ final class AppModel {
             }.value
             let wiped = result.vault != vault
             if wiped {
-                try Keychain.write(result.vault, to: .vault) // a silent wipe ran
+                try DeviceSecrets.app.write(result.vault, to: .vault) // a silent wipe ran
             }
             guard let secret = result.secret else {
                 errorText = "Wrong PIN."
@@ -166,17 +170,19 @@ final class AppModel {
     }
 
     /// Seconds left before the next PIN can be checked; 0 when there's no wait.
-    func remainingWait(at date: Date = Date()) -> TimeInterval {
+    func remainingWait() -> TimeInterval {
         guard let lockedUntil else { return 0 }
-        return max(0, lockedUntil.timeIntervalSince(date))
+        let now = BootClock.now()
+        return lockedUntil > now ? Double(lockedUntil - now) / 1_000_000_000 : 0
     }
 
     /// Reads the wrong-PIN counter and sets `lockedUntil`. Throws if the Keychain can't be
     /// read, so a PIN check fails closed.
     @discardableResult
-    private func updateLockout() throws -> Date? {
-        let wait = AttemptLimiter.waitTime(try AttemptLimiter.load())
-        lockedUntil = wait > 0 ? Date().addingTimeInterval(wait) : nil
+    private func updateLockout() throws -> UInt64? {
+        let now = BootClock.now()
+        let wait = AttemptLimiter.waitTime(try AttemptLimiter.load(now: now), now: now)
+        lockedUntil = wait > 0 ? now + UInt64((wait * 1_000_000_000).rounded(.up)) : nil
         return lockedUntil
     }
 
@@ -209,7 +215,7 @@ final class AppModel {
     func revealRecoveryPhrase(pin: String, for session: ProfileSession) async -> PhraseReveal {
         do {
             guard try updateLockout() == nil else { return .waiting }
-            guard let vault = try Keychain.read(.vault) else { return .wrongPin }
+            guard let vault = try DeviceSecrets.app.read(.vault) else { return .wrongPin }
             try AttemptLimiter.recordAttempt()
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)

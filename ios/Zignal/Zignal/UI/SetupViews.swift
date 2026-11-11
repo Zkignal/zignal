@@ -320,8 +320,8 @@ struct UnlockView: View {
                 .background(.quaternary, in: .rect(cornerRadius: 12))
                 .frame(maxWidth: 260)
             // Redrawn every second so the wrong-PIN countdown is live.
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let wait = model.remainingWait(at: context.date)
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let wait = model.remainingWait()
                 VStack(spacing: 20) {
                     Button(action: submit) {
                         ZStack {

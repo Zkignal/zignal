@@ -8,6 +8,29 @@ its entry here in the same commit.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
 - There are no version numbers yet, so each entry names its commits. Dates are commit dates.
 
+## 2026-11-11
+
+### Security
+- **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for
+  the profile files. Both are stored in the Keychain encrypted to a P-256 key that never
+  leaves the Secure Enclave (ECDH with a fresh ephemeral key, HKDF-SHA256, AES-GCM). A copy
+  of the Keychain taken off the phone can't be opened, so the PINs can no longer be guessed
+  offline from it. An existing install seals its vault the first time it opens after the
+  update and its device key at the first unlock, without asking for a PIN; each old copy is
+  deleted only after the sealed one has been read back and opened. Each setup makes a new
+  key. Release builds refuse to set up without a Secure Enclave. New file
+  `Core/DeviceSecrets.swift`; 10 new tests.
+- **The wrong-PIN wait no longer follows the clock.** It's measured on
+  `CLOCK_MONOTONIC_RAW` (the clock behind Swift's `ContinuousClock`), which keeps counting
+  while the phone sleeps and can't be set. Changing the date or time doesn't shorten the
+  wait; a restart can start it over but never shortens it. A wait saved by an older version
+  starts over once. 2 new tests.
+
+### Documentation
+- The README's security notes describe the seal and the new wait, and what's still possible
+  with code running inside Zignal on an unlocked phone. The known limitations about a copy of
+  the Keychain and about the clock are gone.
+
 ## 2026-11-09
 
 ### Security
@@ -20,7 +43,7 @@ its entry here in the same commit.
 ### Documentation
 - The README lists what the November reviews found and what's planned: the trace a panic
   wipe leaves in the wallet folder, how far a short PIN holds against a forensic copy of the
-  vault, and the wrong-PIN wait that follows the clock.
+  vault, and the wrong-PIN wait that follows the clock. (`31280e6`)
 - This changelog, and a security policy (`SECURITY.md`): how to report a vulnerability
   privately, what's in scope and the testing rules. The README links both, and its "Try it"
   dates and the Python reference's test count are brought up to date. (`9df2f92`)

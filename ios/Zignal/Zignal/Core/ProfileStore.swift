@@ -33,22 +33,25 @@ struct ProfileKeyset {
 ///     header = ChaCha20-Poly1305(profile key, body length)     (fixed 32 bytes)
 ///     body   = ChaCha20-Poly1305(profile key, JSON)
 ///
-/// The device key lives in the Keychain (this device only). The profile key comes from that
-/// profile's own PIN, so even with the device key nobody can see where a profile's data ends,
-/// or how much there is, without that PIN.
+/// The device key lives in the Keychain, sealed by this phone's Secure Enclave (`DeviceSecrets`),
+/// so it can't be used off the phone. The profile key comes from that profile's own PIN, so even
+/// with the device key nobody can see where a profile's data ends, or how much there is, without
+/// that PIN.
 ///
 /// Every save re-seals the outer layer of every file with fresh nonces, writes all of them at
 /// one common size and gives them the same timestamps, so all files change together whichever
 /// profile is in use. File names come from the profile key, and there are always at least two
-/// files, so a lone file can't mark itself as the one in use. Known limit: someone holding the
-/// device key and two snapshots can still see which block changed.
+/// files, so a lone file can't mark itself as the one in use. Known limit: someone who can use
+/// the device key (code running inside Zignal on this phone) and has two snapshots can still
+/// see which block changed.
 ///
 /// Files use complete data protection and the folder is excluded from device backups.
 /// Chat state must never come back from a backup: restoring an old ratchet state could reuse
 /// message keys.
 struct ProfileStore {
     enum DeviceKeySource {
-        case keychain
+        /// Sealed in the Keychain by the Secure Enclave.
+        case keychain(DeviceSecrets)
         case fixed(SymmetricKey) // tests only
     }
 
@@ -65,7 +68,7 @@ struct ProfileStore {
     static func standard() -> ProfileStore {
         ProfileStore(directory: URL.applicationSupportDirectory
                         .appending(path: "zkw", directoryHint: .isDirectory),
-                     deviceKeySource: .keychain)
+                     deviceKeySource: .keychain(.app))
     }
 
     /// Creates the folder if needed and keeps it out of backups.
@@ -191,11 +194,11 @@ struct ProfileStore {
         switch deviceKeySource {
         case .fixed(let key):
             return key
-        case .keychain:
-            if let existing = try Keychain.read(.fileKey) { return SymmetricKey(data: existing) }
+        case .keychain(let secrets):
+            if let existing = try secrets.read(.fileKey) { return SymmetricKey(data: existing) }
             guard createIfMissing else { throw ZignalError.damagedProfile }
             let fresh = try secureRandom(32)
-            try Keychain.write(fresh, to: .fileKey)
+            try secrets.write(fresh, to: .fileKey)
             return SymmetricKey(data: fresh)
         }
     }

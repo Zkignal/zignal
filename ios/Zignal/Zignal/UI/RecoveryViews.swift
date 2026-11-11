@@ -45,7 +45,7 @@ struct RecoveryPhraseView: View {
                     .pinInput($pin)
                     .focused($focused)
                 // Redrawn every second so the wrong-PIN countdown is live.
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Button {
                         Task { await check() }
                     } label: {
@@ -58,13 +58,13 @@ struct RecoveryPhraseView: View {
                         }
                     }
                     .disabled(pin.count < PinPolicy.minLength || checking
-                              || model.remainingWait(at: context.date) > 0)
+                              || model.remainingWait() > 0)
                 }
             } header: {
                 Text("Enter your PIN")
             } footer: {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let wait = model.remainingWait(at: context.date)
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    let wait = model.remainingWait()
                     if wait > 0 || checking || errorText != nil {
                         PinStatus(wait: wait, checking: checking, error: errorText)
                     } else {
