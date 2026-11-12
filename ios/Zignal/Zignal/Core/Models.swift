@@ -29,6 +29,10 @@ struct ProfileData: Codable, Equatable {
     /// gone. Kept inside this profile's sealed data, so nobody can see it without this
     /// profile's PIN. Nil otherwise.
     var wipePending: Bool?
+    /// While `wipePending` is set: how many unlocks in a row have found nothing of the wiped
+    /// profile left. The wipe counts as finished after two, so a wallet that wrote its files
+    /// late is still caught. Nil otherwise.
+    var wipeCleanPasses: Int?
 }
 
 /// A profile being restored from its recovery phrase, waiting for PINs to be set.

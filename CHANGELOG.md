@@ -8,27 +8,57 @@ its entry here in the same commit.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
 - There are no version numbers yet, so each entry names its commits. Dates are commit dates.
 
+## 2026-11-12
+
+### Security
+- **A panic unlock takes as long as any other.** Finishing a silent wipe (waiting up to 15
+  seconds for a wallet that is still stopping, then deleting the wiped profile's files) ran
+  before the decoy appeared, so a panic unlock, or a duress unlock that finished an
+  interrupted wipe, could be told apart by its delay. The clean-up now runs once the decoy is
+  on screen, holding only the decoy's wallet alias and file name. Found by an outside review.
+- **Finishing a wipe renames nothing.** The wiped profile's file was replaced by filler under
+  a new name, which two listings of the app's files could show. It's now overwritten under its
+  own name, as every save rewrites every file. Found by an outside review. 2 tests updated.
+- **A wipe counts as finished only after two clean unlocks.** One look at the wallet folder
+  could miss a wallet that wrote its files late; the decoy's sealed data now counts unlocks in a
+  row that find nothing left. Hidden system names in the wallet folder don't count as leftovers.
+  1 new test.
+- **The wallet no longer sends its transparent addresses.** On every sync the SDK asked the
+  server about all of the wallet's transparent addresses (unspent outputs, and transactions
+  involving them), directly even with Tor on: the same identifier of the wallet each time,
+  across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only; both queries are
+  skipped in the vendored SDK (listed in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`).
+  ZEC sent to one of the wallet's transparent addresses isn't shown (the app never gives one
+  out).
+- **Storing the vault is read back before an older copy is deleted**, as moving an older item
+  already was.
+
+### Documentation
+- README: the network privacy section is corrected. With Tor on, syncing (blocks, tree states,
+  subtree roots) still connects directly, and until now the wallet's transparent addresses were
+  sent too. The duress and panic notes describe the clean-up after the decoy is on screen.
+
 ## 2026-11-11
 
 ### Security
 - **Profile files are written in a random order.** Each save writes every profile file again,
   and each write makes a new file, so writing the saved profile's file first let file IDs show
-  which profile was in use. 1 new test.
+  which profile was in use. 1 new test. (`487ba86`)
 - **The recovery words appear only once the screen capture state is known.** The words and
   the restore field start hidden, and the capture watcher covers the whole recovery phrase
   screen, so a recording, mirroring or screen sharing that's already running can't catch the
-  words in its first frame.
+  words in its first frame. (`487ba86`)
 - **Changing the server or Tor can't restart a locked wallet.** A server switch validated the
   new server, then restarted the wallet, even if the profile had locked meanwhile, so a
   stopped wallet could sync again and write its files, including after a panic wipe had
   deleted them. The vendored SDK's `switchTo` no longer restarts a synchronizer the app has
   stopped (a patch listed in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`), the app stops
   the wallet again if it locked during the change, and a panic wipe waits for such a change
-  like it waits for a wallet that is stopping. 1 new test.
+  like it waits for a wallet that is stopping. 1 new test. (`487ba86`)
 - **Copying stays on this phone.** Message text and the wallet address could be selected, and
   the system's Copy put them on the general pasteboard: Universal Clipboard to other Apple
   devices, no expiry. Selection is off; a Copy action (touch and hold a message) uses the same
-  local, 5-minute clipboard as invites.
+  local, 5-minute clipboard as invites. (`487ba86`)
 - **A panic wipe that was cut short is finished the next time the decoy opens.** The panic
   PIN now records in the decoy profile's own sealed data that a wipe is under way, and clears
   the record only once the real profile's file and wallet files are confirmed gone. If the
@@ -64,14 +94,14 @@ its entry here in the same commit.
 ### Repository
 - `.gitignore` also keeps out wallet database copies (`*.db`, `*.sqlite` and their journal
   files), logs and traces, key files (`*.key`, `*.pem`, `.env*`), phone screenshots, photos
-  and recordings, and local tooling folders. No file in the repository matched these.
+  and recordings, and local tooling folders. No file in the repository matched these. (`487ba86`)
 
 ### Documentation
 - New README section "Network privacy: Tor, a VPN or your own server": what the server sees
   with Tor off and on, a comparison with Zodl's Oblivious HTTP relay, and how to use a VPN
   (kill switch, choosing an audited no-logs provider, shared addresses, what a VPN doesn't
   do, and a VPN with Tor as the strongest setup today). The roadmap adds asking ZODL about its
-  relay. The README also describes the smaller fixes above.
+  relay. The README also describes the smaller fixes above. (`487ba86`)
 - The README describes how a wipe that was cut short is finished, the vault stored again on
   every unlock, and where the SDK's setting is kept. (`0d6a1fc`)
 - The README's security notes describe the seal and the new wait, and what's still possible

@@ -116,29 +116,35 @@ struct ProfileStore {
         try write(profiles)
     }
 
-    /// Deletes every profile file except this profile's, leaving one fresh filler file at the
-    /// same size in their place. Used after a silent wipe: the wiped profile's file can't be
-    /// opened without its recovery phrase, but it shouldn't stay on the phone at all. The folder
-    /// keeps its usual two files (this profile and one more), so it doesn't show that a
-    /// profile left.
+    /// Replaces every profile file except this profile's with filler at the same size. Used
+    /// after a silent wipe: the wiped profile's file can't be opened without its recovery
+    /// phrase, but it shouldn't stay on the phone at all. The folder keeps its usual two files
+    /// under the same names (this profile and one more), so it doesn't show that a profile
+    /// left: every save rewrites every file the same way, and nothing is renamed.
     ///
-    /// The filler is written first, so an interruption never leaves fewer files than before.
-    /// Running this again (to finish an interrupted wipe) ends with the same two files.
+    /// Files beyond the usual two (left by an older version's interrupted wipe) are deleted
+    /// after the filler is written. Running this again ends with the same two names.
     func removeOthers(keeping keys: ProfileKeyset) throws {
-        let keep = fileURL(for: keys)
+        try removeOthers(keepingFile: fileURL(for: keys))
+    }
+
+    /// `removeOthers(keeping:)` for a profile known only by its file, so a wipe finishing in
+    /// the background doesn't have to hold the profile's keys.
+    func removeOthers(keepingFile keep: URL) throws {
         let others = try profileFiles().filter { $0 != keep }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard let sample = others.first else { return }
         let deviceKey = try deviceKey(createIfMissing: false)
         let sealedSize = try Data(contentsOf: sample).count
         guard sealedSize > 28 else { throw ZignalError.damagedProfile }
         defer { equalizeTimestamps() }
-        for _ in 1..<Self.minimumFiles {
+        let fillers = Self.minimumFiles - 1
+        for url in others.prefix(fillers) {
             let filler = try ChaChaPoly.seal(try secureRandom(sealedSize - 28), using: deviceKey,
                                              authenticating: Self.outerAD).combined
-            try filler.write(to: fileURL(named: Self.hex(try secureRandom(16))),
-                             options: [.atomic, .completeFileProtection])
+            try filler.write(to: url, options: [.atomic, .completeFileProtection])
         }
-        for url in others {
+        for url in others.dropFirst(fillers) {
             try FileManager.default.removeItem(at: url)
         }
     }
@@ -152,6 +158,7 @@ struct ProfileStore {
     func setWipePending(_ pending: Bool, for keys: ProfileKeyset) throws {
         guard var data = try load(keys) else { return }
         data.wipePending = pending ? true : nil
+        data.wipeCleanPasses = nil
         try save(data, keys)
     }
 

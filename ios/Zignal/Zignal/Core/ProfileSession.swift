@@ -48,8 +48,10 @@ final class ProfileSession {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var walletRestored: Bool
     @ObservationIgnored private var processedTransactions: [Data]
-    /// Carried through every save; set and cleared by `AppModel` (see `ProfileData.wipePending`).
-    @ObservationIgnored private let wipePending: Bool?
+    /// Carried through every save. Set by `AppModel` before the profile opens, and cleared
+    /// through `recordWipePass` (see `ProfileData.wipePending`).
+    @ObservationIgnored private var wipePending: Bool?
+    @ObservationIgnored private var wipeCleanPasses: Int?
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
     /// Messages being sent again right now, so a second tap can't send them twice.
@@ -69,6 +71,26 @@ final class ProfileSession {
         processedTransactions = loaded.data.processedTransactions ?? []
         preparedNoteValue = loaded.data.preparedNoteValue
         wipePending = loaded.data.wipePending
+        wipeCleanPasses = loaded.data.wipeCleanPasses
+    }
+
+    /// Records one pass of finishing a silent wipe (see `ProfileData.wipeCleanPasses`). A
+    /// clean pass counts towards finishing; anything left behind starts the count again.
+    /// Ignored once the profile has locked: the next unlock runs the pass again.
+    func recordWipePass(clean: Bool) {
+        guard !isClosed, wipePending == true else { return }
+        if clean {
+            let passes = (wipeCleanPasses ?? 0) + 1
+            if passes >= 2 {
+                wipePending = nil
+                wipeCleanPasses = nil
+            } else {
+                wipeCleanPasses = passes
+            }
+        } else {
+            wipeCleanPasses = nil
+        }
+        persist()
     }
 
     // MARK: - Lifecycle
@@ -555,7 +577,7 @@ final class ProfileSession {
                                walletSettings: walletSettings == .standard ? nil : walletSettings,
                                processedTransactions: processedTransactions,
                                preparedNoteValue: preparedNoteValue,
-                               wipePending: wipePending)
+                               wipePending: wipePending, wipeCleanPasses: wipeCleanPasses)
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }

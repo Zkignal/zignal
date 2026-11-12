@@ -455,7 +455,8 @@ struct WalletFiles {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else {
             return !FileManager.default.fileExists(atPath: root.path)
         }
-        return names.allSatisfy { $0.hasPrefix("c_\(keepAlias)_") }
+        // Hidden names (".something") are system bookkeeping, never wallet files.
+        return names.allSatisfy { $0.hasPrefix("c_\(keepAlias)_") || $0.hasPrefix(".") }
     }
 
     /// Deletes every wallet file except those of the profile with `keepAlias`. Called after a

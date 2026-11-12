@@ -151,3 +151,23 @@ locked while settings were being applied, and counts that work as a wallet windi
 Files: `Sources/ZcashLightClientKit/Utils/SDKFlags.swift`,
 `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
+
+## Change: no transparent-address queries (Zignal `dev` only)
+
+**Problem.** On every sync, `FetchUTXOsAction` asked the light server for the unspent outputs of
+every transparent address of the wallet (`UTXOFetcher`, `listTransparentReceivers`), and
+`BlockEnhancer` answered librustzcash's `transactionsInvolvingAddress` requests with
+`getTaddressTransactions`. Both use `ServiceMode.direct`, so they leave from the phone's own
+IP address even with Tor on. The server received the same list of the wallet's transparent
+addresses on each sync: a stable identifier that follows the wallet across IP addresses, VPN
+exits and Tor. Zignal uses shielded (Orchard) addresses only and never shows a transparent one.
+
+**Change.** `FetchUTXOsAction.run` skips the fetch and goes straight to the next step.
+`BlockEnhancer` drops `transactionsInvolvingAddress` requests before its loop. Transaction
+fetches for the wallet's own transactions (`.enhancement`, over Tor when it's on) are unchanged.
+Side effect: ZEC sent to one of the wallet's transparent addresses isn't seen by Zignal (the app
+never gives one out; restore the words in a full wallet to recover such funds).
+
+Files: `Sources/ZcashLightClientKit/Block/Actions/FetchUTXOsAction.swift`,
+`Sources/ZcashLightClientKit/Block/Enhance/BlockEnhancer.swift`, and this file. Every changed
+spot is marked `Zignal patch`. Not on the `nu7` branch.

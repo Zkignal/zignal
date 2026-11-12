@@ -111,6 +111,10 @@ struct DeviceSecrets: Sendable {
         try locked {
             do {
                 try Keychain.write(try seal(data, as: secret), to: secret.sealedItem, service: service)
+                // Read back and opened before anything else changes, as when moving an older
+                // plain item: a write the Keychain didn't keep must not count as stored.
+                guard let stored = try Keychain.read(secret.sealedItem, service: service),
+                      try open(stored, as: secret) == data else { throw Unreadable() }
             } catch is Unreadable {
                 throw ZignalError.damagedProfile
             }

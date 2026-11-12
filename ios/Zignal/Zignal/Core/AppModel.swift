@@ -145,43 +145,50 @@ final class AppModel {
                 // next time this profile opens, with either of its PINs.
                 try? store.setWipePending(true, for: keys)
             }
-            if wiped || (try? store.wipePending(for: keys)) == true {
-                await finishWipe(keeping: keys)
-            }
+            let pending = wiped || (try? store.wipePending(for: keys)) == true
             let seed = try await Task.detached(priority: .userInitiated) {
                 try walletSeed(profileSecret: secret)
             }.value
-            show(try await ProfileSession.open(keys: keys, store: store), walletSeed: seed)
+            let session = try await ProfileSession.open(keys: keys, store: store)
+            show(session, walletSeed: seed)
+            // After the profile is on screen, so a panic unlock (or one that finishes an
+            // interrupted wipe) takes as long as any other unlock.
+            if pending {
+                finishWipe(alias: keys.walletAlias, file: store.fileURL(for: keys), session: session)
+            }
         } catch {
             errorText = Self.describe(error)
         }
     }
 
-    /// Deletes everything of the wiped profile: its profile file, its wallet files and the SDK's
+    /// Deletes everything of the wiped profile, in the background, while the open profile is
+    /// already on screen: its profile file (replaced by filler), its wallet files and the SDK's
     /// per-wallet settings. A wallet stopped on an earlier lock may still be finishing its last
-    /// step and could write its files again, so it waits for that first. Failures don't stop
-    /// the unlock (under duress the decoy must still open normally); the wipe stays marked as
-    /// pending and runs again the next time this profile opens.
-    private func finishWipe(keeping keys: ProfileKeyset) async {
-        let settled = await WalletShutdown.waitForAll()
-        Self.removeEverythingBut(keys)
-        let filesRemoved = (try? store.removeOthers(keeping: keys)) != nil
-        if settled && filesRemoved && WalletFiles.holdsOnly(keys.walletAlias) {
-            try? store.setWipePending(false, for: keys)
-        } else if !settled {
-            // Still running after the wait: delete again once it has stopped. The wipe stays
-            // pending, so the next open checks again.
-            Task {
+    /// step and could write its files again, so it waits for that first. Holds only the open
+    /// profile's wallet alias and file name, and the session weakly.
+    ///
+    /// The wipe counts as finished only after two unlocks in a row find nothing left
+    /// (`ProfileSession.recordWipePass`); until then each unlock of this profile runs it again.
+    private func finishWipe(alias: String, file: URL, session: ProfileSession) {
+        let store = store
+        Task { [weak session] in
+            let settled = await WalletShutdown.waitForAll()
+            Self.removeEverythingBut(alias)
+            let filesRemoved = (try? store.removeOthers(keepingFile: file)) != nil
+            let clean = settled && filesRemoved && WalletFiles.holdsOnly(alias)
+            session?.recordWipePass(clean: clean)
+            if !settled {
+                // Still running after the wait: delete again once it has stopped.
                 await WalletShutdown.waitForAll(timeout: .seconds(300))
-                Self.removeEverythingBut(keys)
+                Self.removeEverythingBut(alias)
             }
         }
     }
 
-    /// Deletes the wallet files and the SDK's wallet settings of every profile except `keys`.
-    private static func removeEverythingBut(_ keys: ProfileKeyset) {
-        WalletFiles.removeWallets(except: keys.walletAlias)
-        WalletFiles.removeSDKDefaults(except: keys.walletAlias)
+    /// Deletes the wallet files and the SDK's wallet settings of every profile but this one.
+    private static func removeEverythingBut(_ keepAlias: String) {
+        WalletFiles.removeWallets(except: keepAlias)
+        WalletFiles.removeSDKDefaults(except: keepAlias)
     }
 
     /// Shows any wrong-PIN wait as soon as a PIN screen appears, before anything is typed.

@@ -1057,12 +1057,16 @@ struct WalletWipeTests {
         let before = try fileNames(store)
         let decoyData = try store.load(decoy)
 
+        let realBefore = try Data(contentsOf: store.fileURL(for: real))
+
         try store.removeOthers(keeping: decoy)
 
+        // Same names as before: finishing a wipe renames nothing. The wiped profile's file is
+        // filler now and can't be opened.
         let after = try fileNames(store)
-        #expect(after.count == before.count)
-        #expect(!FileManager.default.fileExists(atPath: store.fileURL(for: real).path))
-        #expect(try store.load(real) == nil)
+        #expect(after == before)
+        #expect(try Data(contentsOf: store.fileURL(for: real)) != realBefore)
+        #expect((try? store.load(real)) == nil)
         #expect(try store.load(decoy) == decoyData)
         let sizes = Set(try after.map {
             try FileManager.default.attributesOfItem(atPath: store.directory.appending(path: $0).path)[.size] as? Int
@@ -1144,6 +1148,9 @@ struct WalletWipeTests {
         defer { try? fm.removeItem(at: root) }
         try Data("db".utf8).write(to: root.appending(path: "c_aaaaaaaaaaaaaaaa_data.db"))
         #expect(WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root))
+        // Hidden system names aren't wallet files and don't keep a wipe pending forever.
+        try Data().write(to: root.appending(path: ".DS_Store"))
+        #expect(WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root))
         try Data("db".utf8).write(to: root.appending(path: "c_bbbbbbbbbbbbbbbb_data.db"))
         #expect(!WalletFiles.holdsOnly("aaaaaaaaaaaaaaaa", root: root))
     }
@@ -1161,15 +1168,18 @@ struct WalletWipeTests {
         // As if the app stopped right after writing the filler, before deleting anything.
         let extra = try secureRandom(16).map { String(format: "%02x", $0) }.joined()
         try secureRandom(size).write(to: store.directory.appending(path: extra))
-        #expect(try fileNames(store).count == 3)
+        let three = try fileNames(store)
+        #expect(three.count == 3)
 
         try store.removeOthers(keeping: decoy)
-        #expect(try fileNames(store).count == 2)
-        #expect(try store.load(real) == nil)
+        let two = try fileNames(store)
+        #expect(two.count == 2)
+        #expect(Set(two).isSubset(of: Set(three))) // no new names
+        #expect((try? store.load(real)) == nil)
         #expect(try store.load(decoy) == decoyData)
 
         try store.removeOthers(keeping: decoy)
-        #expect(try fileNames(store).count == 2)
+        #expect(try fileNames(store) == two) // the same two names again
         #expect(try store.load(decoy) == decoyData)
     }
 }
@@ -1200,6 +1210,36 @@ struct WipePendingTests {
         #expect(try !store.wipePending(for: decoy))
         #expect(try store.load(decoy)?.wipePending == nil)
         #expect(try store.load(decoy)?.walletSettings?.torEnabled == true)
+    }
+
+    /// A wipe counts as finished only after two unlocks in a row find nothing left; a pass
+    /// that finds something starts the count again, and a locked profile records nothing.
+    @Test func aWipeIsFinishedAfterTwoCleanPasses() async throws {
+        let store = try makeTempStore()
+        let real = try ProfileKeyset(secret: secureRandom(32))
+        let decoy = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: real), real),
+                               (ProfileSession.emptyData(keys: decoy), decoy)])
+        try store.setWipePending(true, for: decoy)
+
+        var session = try await ProfileSession.open(keys: decoy, store: store)
+        session.recordWipePass(clean: true)
+        #expect(try store.load(decoy)?.wipePending == true)
+        #expect(try store.load(decoy)?.wipeCleanPasses == 1)
+        session.recordWipePass(clean: false)
+        #expect(try store.load(decoy)?.wipePending == true)
+        #expect(try store.load(decoy)?.wipeCleanPasses == nil)
+        session.recordWipePass(clean: true)
+        session.close()
+        session.recordWipePass(clean: true) // locked: ignored
+        #expect(try store.load(decoy)?.wipeCleanPasses == 1)
+
+        session = try await ProfileSession.open(keys: decoy, store: store)
+        session.recordWipePass(clean: true)
+        #expect(try store.load(decoy)?.wipePending == nil)
+        #expect(try store.load(decoy)?.wipeCleanPasses == nil)
+        #expect(try !store.wipePending(for: decoy))
+        session.close()
     }
 }
 

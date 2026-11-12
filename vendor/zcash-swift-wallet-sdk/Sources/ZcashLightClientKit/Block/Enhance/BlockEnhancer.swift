@@ -103,7 +103,13 @@ extension BlockEnhancerImpl: BlockEnhancer {
 
         // fetch transactions
         do {
-            let transactionDataRequests = try await rustBackend.transactionDataRequests()
+            // Zignal patch: requests about transparent addresses are dropped. Answering them sends
+            // the wallet's transparent addresses to the light server without Tor, a stable
+            // identifier of the wallet; Zignal uses shielded addresses only.
+            let transactionDataRequests = try await rustBackend.transactionDataRequests().filter {
+                if case .transactionsInvolvingAddress = $0 { return false }
+                return true
+            }
 
             guard !transactionDataRequests.isEmpty else {
                 logger.debug("No transaction data requests detected.")
