@@ -4,11 +4,26 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 APP_GEN="../ios/Zignal/Zignal/Generated"
+REPO_DIR="$(cd .. && pwd)"
+
+fail() { echo "build-ios.sh: $*" >&2; exit 1; }
 
 echo "==> Rust iOS targets"
+installed="$(rustup target list --installed)"
 for t in aarch64-apple-ios aarch64-apple-ios-sim; do
-  rustup target list --installed | grep -qx "$t" || rustup target add "$t"
+  grep -qx "$t" <<<"$installed" || rustup target add "$t"
 done
+
+# Keep this Mac's file paths (which include the account name) out of the library, and so out of
+# the app: rustc embeds source paths in panic messages, the C compiler in assertions.
+# When several rustc prefixes match, the last one given wins.
+CARGO_DIR="${CARGO_HOME:-$HOME/.cargo}"
+CARGO_ENCODED_RUSTFLAGS="$(printf '%s\037%s\037%s' \
+  "--remap-path-prefix=$HOME=/build" \
+  "--remap-path-prefix=$CARGO_DIR=/cargo" \
+  "--remap-path-prefix=$REPO_DIR=/zignal")"
+export CARGO_ENCODED_RUSTFLAGS
+export CFLAGS="-ffile-prefix-map=$HOME=/build"
 
 echo "==> Tests"
 cargo test --offline
@@ -17,6 +32,20 @@ echo "==> Build: iPhone, simulator, host (host is only for generating bindings)"
 cargo build --offline --release --target aarch64-apple-ios
 cargo build --offline --release --target aarch64-apple-ios-sim
 cargo build --offline --release
+
+echo "==> Identity check"
+needles=("$HOME")
+account="$(id -un)"
+[ "${#account}" -ge 4 ] && needles+=("$account")  # a very short name would match at random
+for t in aarch64-apple-ios aarch64-apple-ios-sim; do
+  lib="target/$t/release/libzkw_ffi.a"
+  [ -s "$lib" ] || fail "missing $lib"
+  for needle in "${needles[@]}"; do
+    n="$({ LC_ALL=C grep -a -o -F -- "$needle" "$lib" || true; } | wc -l | tr -d ' ')"
+    [ "$n" = 0 ] || fail "$lib still contains this Mac's account name or home folder ($n times). Don't use or ship it."
+  done
+  echo "$lib: no home folder or account name"
+done
 
 echo "==> Generate Swift bindings"
 rm -rf out && mkdir -p out/swift out/headers

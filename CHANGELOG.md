@@ -8,6 +8,24 @@ its entry here in the same commit.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
 - There are no version numbers yet, so each entry names its commits. Dates are commit dates.
 
+## 2026-11-14
+
+### Security
+- **The Rust core's build keeps the build machine out of the library.** Rust records source
+  paths for error messages, and on a Mac they include the builder's account name, which would
+  end up in the app. `zkw-ffi/build-ios.sh` now removes them and stops if the library still
+  contains the home folder or account name, as the SDK's build already did.
+
+### Added
+- **A privacy manifest** (`PrivacyInfo.xcprivacy`), which Apple requires before an upload: the
+  app tracks no one, collects no data, and uses its own settings (`UserDefaults`), the
+  dates of its own files, and the free storage space (`statfs`, used by libraries linked
+  into the app).
+  1 new test checks the app ships it.
+
+### Documentation
+- README: TestFlight isn't public yet; private testing comes first, then a public link.
+
 ## 2026-11-12
 
 ### Security
@@ -15,28 +33,28 @@ its entry here in the same commit.
   seconds for a wallet that is still stopping, then deleting the wiped profile's files) ran
   before the decoy appeared, so a panic unlock, or a duress unlock that finished an
   interrupted wipe, could be told apart by its delay. The clean-up now runs once the decoy is
-  on screen, holding only the decoy's wallet alias and file name. Found by an outside review.
+  on screen, holding only the decoy's wallet alias and file name. Found by an outside review. (`775e08d`)
 - **Finishing a wipe renames nothing.** The wiped profile's file was replaced by filler under
   a new name, which two listings of the app's files could show. It's now overwritten under its
-  own name, as every save rewrites every file. Found by an outside review. 2 tests updated.
+  own name, as every save rewrites every file. Found by an outside review. 2 tests updated. (`775e08d`)
 - **A wipe counts as finished only after two clean unlocks.** One look at the wallet folder
   could miss a wallet that wrote its files late; the decoy's sealed data now counts unlocks in a
   row that find nothing left. Hidden system names in the wallet folder don't count as leftovers.
-  1 new test.
+  1 new test. (`775e08d`)
 - **The wallet no longer sends its transparent addresses.** On every sync the SDK asked the
   server about all of the wallet's transparent addresses (unspent outputs, and transactions
   involving them), directly even with Tor on: the same identifier of the wallet each time,
   across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only; both queries are
   skipped in the vendored SDK (listed in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`).
   ZEC sent to one of the wallet's transparent addresses isn't shown (the app never gives one
-  out).
+  out). (`775e08d`)
 - **Storing the vault is read back before an older copy is deleted**, as moving an older item
-  already was.
+  already was. (`775e08d`)
 
 ### Documentation
 - README: the network privacy section is corrected. With Tor on, syncing (blocks, tree states,
   subtree roots) still connects directly, and until now the wallet's transparent addresses were
-  sent too. The duress and panic notes describe the clean-up after the decoy is on screen.
+  sent too. The duress and panic notes describe the clean-up after the decoy is on screen. (`775e08d`)
 
 ## 2026-11-11
 

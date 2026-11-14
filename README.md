@@ -28,7 +28,8 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 12 | **A panic unlock takes as long as any other, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | |
+| Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | |
+| Nov 12 | **A panic unlock takes as long as any other, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | `775e08d` |
 | Nov 11 | **Smaller fixes from the November reviews.** Profile files are written in a random order. The recovery words appear only once the app knows the screen isn't being recorded. Changing the server or Tor and then locking can't start a stopped wallet again, and a panic wipe waits for such a change to finish. Message text and the wallet address are copied only with Copy, which stays on this phone. | Each write makes a new file, so a fixed order let file IDs show which profile was saved. A recording already running could catch the words in its first frame. A server switch restarted the wallet even after a lock, so it could write a wiped profile's files again. Selected text went to the general pasteboard: other Apple devices, no expiry. | `487ba86` |
 | Nov 11 | **A panic wipe that was cut short is finished the next time the decoy opens**, with the duress or the panic PIN. Every unlock stores the PIN vault again, and the Zcash SDK's one setting per wallet moves from the app's preferences into the wallet's own folder. | If the app was closed or the phone switched off during a wipe, the real wallet's database stayed on the phone until the panic PIN was entered again. The vault changed only on a panic wipe, so its change date in the Keychain dated the wipe. The app's preferences go into device backups and kept one entry for every wallet the app had opened. | `0d6a1fc` |
 | Nov 11 | **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for the profile files. The wrong-PIN wait is measured on a clock that can't be set (`CLOCK_MONOTONIC_RAW`), not the date and time. | A copy of the Keychain taken off an unlocked phone held the vault as it was, so the PINs could be guessed offline: a 6-digit PIN within hours. Now the vault opens only on this phone, through the app. Moving the clock forward used to shorten the wait. | `adbf62f` |
@@ -54,7 +55,7 @@ Tested on `dev` (November 1 to 7, iPhone, Zcash mainnet):
   sent in airplane mode that went out once the network came back;
 - the recovery words hidden during a screen recording, and the warning after a screenshot.
 
-97 app tests and 2 UI tests pass.
+98 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -142,8 +143,8 @@ that's on the roadmap.
 
 ## Try it
 
-- **TestFlight:** pending Apple Developer approval. Until then, build from source with Xcode
-  (see Build and test); a free Apple ID can install it on your own iPhone.
+- **TestFlight:** not public yet. Until then, build from source with Xcode (see Build and
+  test); a free Apple ID can install it on your own iPhone.
 - **Two iPhones:** on each, set PINs and back up the recovery phrase, then fund the wallet
   with about 0.01 ZEC (Add funds). Received ZEC can be spent after 10 confirmations.
   Receiving messages needs no ZEC: the sender pays the network fee.
@@ -393,7 +394,8 @@ cd zkw-core && cargo test
 # Python reference tests
 cd zkw-ref && python3 -m unittest -v
 
-# Swift bindings + iOS XCFramework, plus the binding tests
+# Swift bindings + iOS XCFramework, plus the binding tests. The library keeps no file paths
+# from the build machine; the script stops if any remain.
 cd zkw-ffi && ./build-ios.sh
 
 # Zcash Sapling parameters (about 51 MB from download.z.cash, size and hash checked)
@@ -411,7 +413,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 97 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 98 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
     test for each unlock step;
   - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
@@ -428,7 +430,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     settings changes, and removing the SDK's old entries from the app's preferences;
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
     transaction and shown as "Checking" until the wallet has looked; and reading a chat's first
-    message before the rest.
+    message before the rest;
+  - the privacy manifest the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
 - Cmd+R runs the app. The wallet connects to the first server in its list.
@@ -553,7 +556,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 ## Roadmap (after the Zecathon)
 
-- **TestFlight**, once the Apple Developer account is approved.
+- **TestFlight:** private testing first, then a public link.
 - **NU7 compatibility:** done on `nu7` and `dev`, tagged `zecathon-nu7` after testing past
   activation (see [This branch](#this-branch-dev)).
 - **Length privacy:** an option to pad messages to fixed memo counts, so the fee doesn't show
@@ -621,6 +624,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-11 | `adbf62f` | `dev`: PIN vault and device key sealed by the Secure Enclave; wrong-PIN wait on the boot clock |
 | 2026-11-11 | `0d6a1fc` | `dev`: interrupted panic wipes finished; vault resealed on every unlock; SDK setting out of backups |
 | 2026-11-11 | `487ba86` | `dev`: random file write order; words hidden until capture is known; no wallet restart after lock; local copy; network privacy section |
+| 2026-11-12 | `775e08d` | `dev`: panic clean-up after the decoy shows; no renamed files; no transparent-address queries |
 
 ## Credits
 
