@@ -6,7 +6,8 @@ Two iPhones exchange a single-use QR invite. From then on, every message is one 
 transaction on Zcash mainnet. There is no Zignal server, no account and no phone number.
 
 On top of Zcash's own memo encryption, Zignal adds a post-quantum hybrid handshake and a
-Double Ratchet. A leaked wallet viewing key reveals neither past messages nor who sent them.
+Double Ratchet. A leaked wallet viewing key reveals neither past messages nor who sent them,
+only some metadata (see [Security notes](#security-notes-and-known-limitations)).
 
 > **Status:** experimental, built for the Zecathon (October 2026). Not audited.
 > It runs on Zcash mainnet with real ZEC, so use small amounts.
@@ -28,8 +29,9 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | |
-| Nov 12 | **A panic unlock takes as long as any other, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | `775e08d` |
+| Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | |
+| Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | `f8b3881` |
+| Nov 12 | **A panic unlock no longer waits for the clean-up, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | `775e08d` |
 | Nov 11 | **Smaller fixes from the November reviews.** Profile files are written in a random order. The recovery words appear only once the app knows the screen isn't being recorded. Changing the server or Tor and then locking can't start a stopped wallet again, and a panic wipe waits for such a change to finish. Message text and the wallet address are copied only with Copy, which stays on this phone. | Each write makes a new file, so a fixed order let file IDs show which profile was saved. A recording already running could catch the words in its first frame. A server switch restarted the wallet even after a lock, so it could write a wiped profile's files again. Selected text went to the general pasteboard: other Apple devices, no expiry. | `487ba86` |
 | Nov 11 | **A panic wipe that was cut short is finished the next time the decoy opens**, with the duress or the panic PIN. Every unlock stores the PIN vault again, and the Zcash SDK's one setting per wallet moves from the app's preferences into the wallet's own folder. | If the app was closed or the phone switched off during a wipe, the real wallet's database stayed on the phone until the panic PIN was entered again. The vault changed only on a panic wipe, so its change date in the Keychain dated the wipe. The app's preferences go into device backups and kept one entry for every wallet the app had opened. | `0d6a1fc` |
 | Nov 11 | **The PIN vault is sealed by the iPhone's Secure Enclave**, and so is the device key for the profile files. The wrong-PIN wait is measured on a clock that can't be set (`CLOCK_MONOTONIC_RAW`), not the date and time. | A copy of the Keychain taken off an unlocked phone held the vault as it was, so the PINs could be guessed offline: a 6-digit PIN within hours. Now the vault opens only on this phone, through the app. Moving the clock forward used to shorten the wait. | `adbf62f` |
@@ -39,7 +41,7 @@ change on `dev` with its commits and gets an entry with each fix.
 | Nov 7 | **"Tap to send again" sends the same transaction again** when the wallet still holds it, instead of building a new one. | The Zcash SDK keeps a failed send's transaction and resends it every few minutes on its own until it expires, so a new transaction could be paid for twice. | `96668c4` |
 | Nov 7 | **Add funds says received ZEC can be spent in about 4 minutes.** | NU7 brought 25-second blocks, so the 10 confirmations take about 4 minutes instead of 12. | `8c6a7f8` |
 | Nov 7 | **Sending and receiving are more robust.** A contact's second message is no longer lost when it arrives before their first. A send cut short by a lock shows "sent" while its transaction waits to be mined, instead of "Not sent". "Tap to send again" can't send a message twice when tapped twice. | A new contact's early messages could be dropped when the wallet listed them before the message that opened the chat. Tapping "send again" too early or twice paid a second fee. | `3a78a62` |
-| Nov 4 | **Security updates in the SDK's Rust dependencies:** `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2, `tokio` 1.53.3 and `event-listener` 5.4.2, all patch releases. The SDK library now builds with no compiler warnings. | Fixes RustSec advisories RUSTSEC-2026-0391, -0398, -0403, -0410, -0386 and -0221. Two advisories remain, through the Tor client, with no compatible fix yet (see [Security notes](#security-notes-and-known-limitations)). | `a10e69c` |
+| Nov 4 | **Security updates in the SDK's Rust dependencies:** `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2, `tokio` 1.53.3 and `event-listener` 5.4.2, all patch releases. The SDK library now builds with no compiler warnings. | Fixes RustSec advisories RUSTSEC-2026-0391, -0398, -0403, -0410, -0386 and -0221. Two advisories remained, through the Tor client, with no compatible fix (the current list is in [Security notes](#security-notes-and-known-limitations)). | `a10e69c` |
 | Nov 3 | **Interrupted sends are no longer shown as failed.** If you lock the app while a message is sending, it shows "Not sent" at first. Once the wallet sees that message's transaction in a block, the message turns "delivered" by itself. "Tap to send again" checks this first. | Locking mid-send used to leave a "Not sent" message that had in fact gone out. Sending it again cost a second fee. | `5c173ee` |
 | Nov 1 | **NU7 support.** The SDK's Rust library (`libzcashlc`) is now built from source on librustzcash's NU7 releases (`zcash_protocol` 0.11, `zcash_client_backend` 0.25, `zcash_client_sqlite` 0.23, `orchard` 0.16). Before, it was ECC's prebuilt 3.0.0 binary. | The 3.0.0 binary has no NU7 mainnet height. After block 3,543,405 it would use the wrong consensus branch ID: syncing stops and its transactions are invalid. ECC's SDK gets no NU7 release, so Zignal maintains its own fork. | `829ecb0` `f66c1c3` |
 | Nov 1 | **Smaller SDK:** EIP-681 payment links and the Orchard-to-Ironwood pool migration are left out of the library. Stubs keep the same C declarations, so the Swift code is unchanged. | Zignal uses neither feature. About 13,000 lines of upstream code are no longer compiled. | `829ecb0` |
@@ -47,15 +49,19 @@ change on `dev` with its commits and gets an entry with each fix.
 | Nov 1 | **The build keeps the builder out of the library.** File paths from the build machine are removed, and the build stops if any remain. The library targets iOS 17.0, the app's minimum. | By default, Rust and C compilers embed source file paths in a library, including the builder's home folder, and from there they end up in the app. | `f66c1c3` |
 | Oct 29 | **Prepare** (formerly "Prepare for chatting") splits your balance only when it helps. It estimates how many messages can go out back to back from the last split. It waits while recent messages' change confirms, instead of splitting again. The button shows Ready, Confirming or Prepare, with one line saying why. | Before, the app could suggest splitting again when it didn't need to, and the long label wrapped onto two lines. | `04cd9fd` `cde5a42` |
 
-Tested on `dev` (November 1 to 7, iPhone, Zcash mainnet):
+Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
 - existing wallets upgraded to the new wallet database and kept syncing;
 - messages both ways with Tor on and off, before and after NU7 activated (November 6, UTC);
 - Add funds and Prepare;
 - interrupted sends: each showed "sent", then "delivered", without a second fee, including one
   sent in airplane mode that went out once the network came back;
-- the recovery words hidden during a screen recording, and the warning after a screenshot.
+- the recovery words hidden during a screen recording, and the warning after a screenshot;
+- the Secure Enclave seal on the phone: the vault and the device key sealed, no plain copy
+  left (November 10);
+- the app's tests on the phone after each change from November 10 on;
+- messages both ways between two iPhones (November 14).
 
-98 app tests and 2 UI tests pass.
+102 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -130,7 +136,7 @@ attached to a payment. Zignal is built for messages, and ZEC only pays the netwo
 
 | | A memo in a Zcash wallet | A Zignal message |
 |---|---|---|
-| Who can read it | Anyone with the recipient's viewing key, past and future memos alike | A viewing key shows only ciphertext: a second end-to-end layer with forward secrecy |
+| Who can read it | Anyone with the recipient's viewing key, past and future memos alike | A viewing key shows ciphertext and a short header: a second end-to-end layer with forward secrecy |
 | Who sent it | No proven sender: anyone can write any name in a memo | Every contact is authenticated in the handshake; safety numbers to compare |
 | Quantum | Zcash's note encryption uses classical cryptography | Hybrid post-quantum handshake (X25519 + ML-KEM-768) inside the memos |
 | Addresses | You hand out your wallet address | A fresh shielded address per contact; no transparent addresses |
@@ -157,7 +163,7 @@ that's on the roadmap.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
   protocol without touching the network.
 - **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
-  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 7
+  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 14
   (see [This branch](#this-branch-dev)).
 
 ## Repository layout
@@ -169,7 +175,7 @@ that's on the roadmap.
 | `zkw-ffi/` | Swift bindings for `zkw-core` (UniFFI) and the iOS XCFramework build script |
 | `ios/Zignal/` | SwiftUI iOS app: `Core/` (storage, vault, sessions, wallet), `UI/` (screens), `Generated/` (bindings) |
 | `ios/Zignal/scripts/` | Downloads and hash-checks the Zcash Sapling parameters bundled into the app |
-| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and on `dev` three more changes), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
+| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and on `dev` four more changes), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
 
 ## Protocol at a glance
 
@@ -188,7 +194,8 @@ that's on the roadmap.
 - **Contacts:** single-use invites by QR code or paste. Each contact gets its own receive
   address. Contacts verify each other with a 60-digit safety number. The core also supports
   cold contact requests that the recipient must accept; the app doesn't offer them yet.
-- **Conversation lookup:** a tag that rotates daily instead of any sender identifier.
+- **Conversation lookup:** a tag that rotates daily (each UTC day) instead of any sender
+  identifier. It sits in the memo's readable header (see the security notes).
 - **Primitives:** X25519, Ed25519, ML-KEM-768, ChaCha20-Poly1305, HKDF-SHA256, Argon2id,
   all from audited RustCrypto and dalek crates. No custom primitives.
 
@@ -206,8 +213,9 @@ that's on the roadmap.
   block time, so a message read days later still finds its chat.
 - **Delivered** means the transaction is in a block. There are no read receipts, which would
   cost the reader a transaction and reveal when they read.
-- **Servers:** public lightwalletd servers by default (zec.rocks and zcash-infra), editable in
-  the app, including your own. Tor is off by default and can be switched on per profile.
+- **Servers:** public lightwalletd servers by default (zec.rocks, Stardust and Cake Wallet;
+  only the first is used), editable in the app, including your own. Tor is off by default
+  and can be switched on per profile.
 - **Sapling parameters** are bundled in the app and checked against pinned hashes at build
   time, so the app never downloads them.
 - **NU7:** the SDK's Rust library is built from source on librustzcash's NU7 releases, so the
@@ -222,10 +230,11 @@ that's on the roadmap.
   open and could recreate a deleted wallet database). With the fixes, a stopped wallet stays
   stopped. Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`; both are reported
   upstream in [zcash/zcash-swift-wallet-sdk#2012](https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012).
-  On `dev`, three more changes: the SDK's per-wallet record of its witness repair is kept in
+  On `dev`, four more changes: the SDK's per-wallet record of its witness repair is kept in
   the wallet's own folder instead of the app's preferences, a server switch no longer
-  restarts a wallet the app has stopped, and the wallet never asks the server about its
-  transparent addresses.
+  restarts a wallet the app has stopped, the wallet never asks the server about its
+  transparent addresses, and a recent checkpoint (block 3,565,000, after NU7) shortens
+  restores from a recovery phrase.
 
 ## How the app protects data on the phone
 
@@ -240,22 +249,28 @@ that's on the roadmap.
   and the PINs can't be guessed offline from it.
 - An install from before this change seals its vault the first time it opens and its device
   key at the first unlock, without asking for a PIN. Each old copy is deleted only after the
-  sealed one has been read back and opened.
+  sealed one has been read back and opened. If the seal can't be made, the app keeps using the
+  old copy and tries again the next time it reads it; it doesn't show this yet.
 - 5 wrong PINs are free; after that, each try waits 30 seconds, doubling up to 1 hour, shown
   as a live countdown. Each try is counted in the Keychain before the PIN is checked, so
   force-quitting the app doesn't reset the count. The wait is measured on
   `CLOCK_MONOTONIC_RAW`, which keeps counting while the phone sleeps and can't be set, so
   changing the date or time doesn't shorten it. A restart can start the wait over but never
   shortens it.
+- A successful unlock, with any of the three PINs, resets the count, so the wait doesn't slow
+  down someone who knows the duress PIN. The fix is planned: free tries will come back only
+  with time, one every 4 hours, never with an unlock.
 
 **Duress and panic**
 - The duress PIN opens a decoy profile that looks and works like a normal one, with its own
   wallet. It never starts a wipe; it only finishes one that the panic PIN started.
 - The panic PIN is a last resort. It silently destroys the real profile (its PIN slot, its
   saved data, its wallet files and the Zcash SDK's settings for that wallet), then opens the
-  decoy as usual. The clean-up runs once the decoy is on screen, so a panic unlock takes as
-  long as any other; it waits for any wallet that is still stopping, so nothing can write
-  the real profile's files again after they are deleted. The phone keeps the same profile
+  decoy as usual. The clean-up runs once the decoy is on screen, so a panic unlock doesn't
+  wait for it, though it saves the profile files once more than other unlocks (see
+  [Security notes](#security-notes-and-known-limitations)). The clean-up waits for any wallet
+  that is still stopping; files written back later, for example by a wallet that was still
+  starting, are found and deleted at a later unlock (below). The phone keeps the same profile
   file names at the same size: the real profile's file is overwritten with filler under
   its own name, as every save rewrites every file. The wiped profile's wallet files are
   deleted without a replacement, which leaves a trace (see
@@ -389,14 +404,14 @@ Python 3.11+ with `cryptography` (reference only).
 (cd zkw-core && cargo fetch) && (cd zkw-ffi && cargo fetch)
 
 # Rust core tests, including byte-for-byte checks against the Python reference
-cd zkw-core && cargo test
+(cd zkw-core && cargo test)
 
 # Python reference tests
-cd zkw-ref && python3 -m unittest -v
+(cd zkw-ref && python3 -m unittest -v)
 
 # Swift bindings + iOS XCFramework, plus the binding tests. The library keeps no file paths
 # from the build machine; the script stops if any remain.
-cd zkw-ffi && ./build-ios.sh
+(cd zkw-ffi && ./build-ios.sh)
 
 # Zcash Sapling parameters (about 51 MB from download.z.cash, size and hash checked)
 bash ios/Zignal/scripts/fetch-sapling-params.sh
@@ -413,7 +428,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 98 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 102 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
     test for each unlock step;
   - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
@@ -426,12 +441,13 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
     the core, and copying an invite as text;
-  - memo filtering, wallet settings and messages, waiting for stopped wallets and for
-    settings changes, and removing the SDK's old entries from the app's preferences;
+  - memo filtering, wallet settings and messages, the default servers, where a restore
+    starts scanning, waiting for stopped wallets and for settings changes, and removing the
+    SDK's old entries from the app's preferences;
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
     transaction and shown as "Checking" until the wallet has looked; and reading a chat's first
     message before the rest;
-  - the privacy manifest the app ships.
+  - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
 - Cmd+R runs the app. The wallet connects to the first server in its list.
@@ -441,14 +457,14 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
 To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 - **Not audited.** Treat as experimental software. Friends of the project reviewed `dev` in
-  November 2026; what they found is fixed or listed below.
+  November 2026; what they found is fixed, listed below, or planned.
 - **On chain:** Zcash shielded transactions hide sender, recipient and amount. Your IP address
   and timing are a separate problem.
 - **Network privacy:** with Tor off (the default), the server you use sees your IP address
   and which transactions are yours: the ones you send and the ones it fetches for you to read.
   That links who messaged when to an IP, even though the contents stay encrypted. The Zcash
-  SDK's Tor covers sending and fetching; syncing (blocks, tree states) still connects
-  directly, and the wallet sends no transparent addresses at all. Your own
+  SDK's Tor covers sending and fetching; syncing (blocks, tree states, subtree roots) still
+  connects directly, and the wallet sends no transparent addresses at all. Your own
   server removes the third party entirely. A VPN with a kill switch and a no-logs provider,
   together with Tor, covers the rest (see
   [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
@@ -471,11 +487,18 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
-- **Remaining RustSec advisories** in the SDK's dependencies, both through arti (the Tor
-  client, off by default), with no compatible fix yet:
-  - `rsa`: the Marvin attack targets private-key decryption; a Tor client only verifies
-    signatures;
-  - `crypto-bigint`: used for SSH key parsing for onion services, which Zignal doesn't use.
+- **Remaining RustSec advisories** in the SDK's dependencies (November 14, 2026):
+  - through arti (the Tor client, off by default), with no compatible fix yet: `rsa`
+    (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
+    only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; used for SSH key
+    parsing for onion services, which Zignal doesn't use);
+  - `libsqlite3-sys` 0.35 (RUSTSEC-2026-0459), the SQLite built into the SDK's Rust code:
+    opening a database together with a crafted `-wal` file can return uninitialized memory.
+    Only the app writes these databases, inside its own container. The fix needs newer
+    releases of librustzcash and arti;
+  - `rustix` 1.1.4 (RUSTSEC-2026-0486, informational): unsound when an extended-attribute
+    call gets an empty buffer. It comes in through `tempfile`; Zignal makes no such call.
+    Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet.
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
@@ -489,6 +512,15 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   plus a sync.
 - **Wallet files:** the Zcash SDK stores each wallet in a plaintext database, protected by iOS
   file protection. A forensic image of an unlocked phone could tell which wallet has history.
+- **What a viewing key still shows:** each memo starts with a short header in the clear: the
+  Zignal marker and version, the message type (for example, that it starts a chat), a
+  conversation tag that stays the same for a chat through a whole UTC day, and how many bytes
+  of the encrypted message it carries. So anyone with a profile's viewing key, or a copy of
+  its wallet database (which keeps its memos), can see that Zignal is in use, group a day's
+  messages by chat, count them, see how long each one is, and see when a chat started. A
+  chat's first message also carries its invite's ID, so someone who saw that invite can match
+  the two. Message text and who your contacts are stay encrypted. Encrypting more of the
+  header is on the roadmap.
 - **Seed in memory:** while a profile is unlocked, its wallet seed stays in memory to sign
   sends. Swift can't reliably wipe memory after lock; the Rust core wipes its own copies.
 - **PIN strength:** with a copy of the Keychain, PINs can only be tried on the phone itself,
@@ -501,6 +533,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Panic PIN:**
   - It can't be undone. The real wallet's funds come back only with its 24-word phrase, so
     keep that phrase off the phone; chat history can't be recovered.
+  - Choose the three PINs several digits apart. An unlock PIN mistyped into the panic PIN
+    erases the real profile, and one mistyped into the duress PIN opens the decoy. The app
+    doesn't check this yet.
   - Someone who saw your unlock PIN work before will notice that it stops working.
   - It erases only what's on this phone. Transactions stay on chain (unreadable without the
     keys), the server may keep its own records of your IP address, your contacts keep their
@@ -515,6 +550,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
     the panic PIN is entered again.
   - Opening the decoy never waits for the clean-up: a wallet that is still stopping is
     waited for in the background, after the decoy is on screen.
+  - Before the decoy shows, a panic unlock saves the profile files once more than other
+    unlocks do. The difference is small but could be measured; removing it is planned.
 - **The panic PIN leaves a trace:** it destroys the real profile and keeps the same number of
   profile files, but the real profile's wallet files are deleted without a replacement.
   Someone examining the phone's files can then see that only the open profile has a wallet.
@@ -574,12 +611,16 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Hardening from our review:** one-time prekeys for the first message, show when a contact
   resets a chat, and let users revoke unused invites. Hiding the recovery words during screen
   capture and limiting stored contact requests are done on `dev`.
-- **From the November reviews:** a panic wipe that leaves the wallet folder looking the same.
+- **From the November reviews:** a panic wipe that leaves the wallet folder looking the same;
+  PIN rules that keep the three PINs apart, and a wrong-PIN count that a successful unlock
+  doesn't reset; a panic unlock without the extra save; a notice when the Secure Enclave seal
+  can't be made; a memo header that shows less to a viewing key.
   The PIN vault sealed by the Secure Enclave, a wrong-PIN wait that doesn't follow the
   clock, finishing a panic wipe that was cut short, and the fixes of November 11 and 12
   are done on `dev`.
-- **Faster first sync:** recent checkpoints, so a new wallet starts near the chain tip instead
-  of scanning from mid-2026.
+- **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
+  with an earlier date doesn't scan from June. (A new wallet already starts near the chain
+  tip.)
 - **Ask ZODL** whether Zignal may use its Oblivious HTTP relay (client, relays and
   gateway), or on what terms (see [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
 - **Tor library update**, once librustzcash moves to a current arti
@@ -625,6 +666,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-11 | `0d6a1fc` | `dev`: interrupted panic wipes finished; vault resealed on every unlock; SDK setting out of backups |
 | 2026-11-11 | `487ba86` | `dev`: random file write order; words hidden until capture is known; no wallet restart after lock; local copy; network privacy section |
 | 2026-11-12 | `775e08d` | `dev`: panic clean-up after the decoy shows; no renamed files; no transparent-address queries |
+| 2026-11-14 | `f8b3881` | `dev`: release readiness: no build paths in the Rust core; privacy manifest; TestFlight wording |
 
 ## Credits
 
@@ -634,7 +676,7 @@ libraries:
 - **Zcash Swift SDK** ([ZcashLightClientKit](https://github.com/zcash/zcash-swift-wallet-sdk),
   MIT, Znewco, Inc. (Zcash Open Development Lab), maintained in the `zcash` GitHub
   organization): wallet sync, keys, addresses and transactions. Release 3.0.0 is
-  included in `vendor/` under its own MIT license, with Zignal's two fixes (and on `dev` three
+  included in `vendor/` under its own MIT license, with Zignal's two fixes (and on `dev` four
   more changes) and, on `dev` and `nu7`, its Rust layer rebuilt on the NU7 crates, all
   listed in `ZIGNAL-PATCHES.md`. It includes
   **[librustzcash](https://github.com/zcash/librustzcash)** (MIT/Apache-2.0) and
@@ -648,7 +690,7 @@ libraries:
 - **Apple frameworks:** SwiftUI, VisionKit (QR scanning), Core Image (QR codes).
 - **Protocol design:** the handshake and ratchet follow the PQXDH and Double Ratchet
   specifications published by Signal. No code was taken from Signal.
-- **Public lightwalletd servers** run by zec.rocks and zcash-infra, used as defaults.
+- **Public lightwalletd servers** run by zec.rocks, Stardust and Cake Wallet, used as defaults.
 - **AI assistance:** built with help from Claude (Anthropic); commits list it as co-author.
 
 ## License

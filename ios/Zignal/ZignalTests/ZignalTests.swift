@@ -980,6 +980,14 @@ struct WalletSettingsTests {
         #expect(WalletSettings.standard.servers.allSatisfy { WalletSettings.Server($0.label) == $0 })
     }
 
+    @Test func defaultServersComeFromThreeOperators() {
+        let servers = WalletSettings.defaultServers
+        #expect(Set(servers).count == servers.count)
+        #expect(servers.allSatisfy { $0.port == 443 })
+        let operators = Set(servers.map { $0.host.split(separator: ".").suffix(2).joined(separator: ".") })
+        #expect(operators == ["zec.rocks", "stardust.rest", "cakewallet.com"])
+    }
+
     @Test func olderProfileFilesHaveNoWalletFields() throws {
         let old = Data(#"{"version":1,"inbox":"AQ==","contacts":[],"messages":[]}"#.utf8)
         let data = try JSONDecoder().decode(ProfileData.self, from: old)
@@ -987,6 +995,56 @@ struct WalletSettingsTests {
         #expect(data.walletSettings == nil)
         #expect(data.processedTransactions == nil)
         #expect(data.preparedNoteValue == nil)
+    }
+}
+
+struct RestoreStartTests {
+    /// Fixed offsets, so the result doesn't depend on where the tests run.
+    private func fixedCalendar(hoursFromUTC: Int) throws -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: hoursFromUTC * 3600))
+        return calendar
+    }
+
+    @Test(arguments: [-12, 0, 14])
+    func startsAtTheBeginningOfTheDayBefore(hoursFromUTC: Int) throws {
+        let calendar = try fixedCalendar(hoursFromUTC: hoursFromUTC)
+        let picked = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 12, hour: 23, minute: 59)))
+        let start = RestoreStart.date(for: picked, calendar: calendar)
+        #expect(start == calendar.date(from: DateComponents(year: 2026, month: 11, day: 11)))
+        // A wallet made in the first second of the picked day is still scanned from before it.
+        let firstSecond = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 12, second: 1)))
+        #expect(start < firstSecond)
+    }
+
+    /// Picking the day of the newest bundled checkpoint (block 3,565,000, mined
+    /// 2026-11-12 09:53:50 UTC) never starts a restore at that checkpoint.
+    @Test(arguments: [-12, 0, 14])
+    func thePickedDaysCheckpointIsNeverTheStart(hoursFromUTC: Int) throws {
+        let calendar = try fixedCalendar(hoursFromUTC: hoursFromUTC)
+        let checkpointTime = Date(timeIntervalSince1970: 1_794_477_230)
+        let pickedThatDay = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: checkpointTime) ?? checkpointTime
+        #expect(RestoreStart.date(for: pickedThatDay, calendar: calendar) < checkpointTime)
+    }
+}
+
+struct BundledCheckpointTests {
+    /// The checkpoint this fork adds (block 3,565,000, after NU7) ships inside the app with the
+    /// fields the SDK reads. Its values were fetched from two separate operators and matched.
+    @Test func recentCheckpointShipsWithTheApp() throws {
+        let files = FileManager.default.enumerator(at: Bundle.main.bundleURL, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }
+            .filter { $0.lastPathComponent == "3565000.json" && $0.deletingLastPathComponent().lastPathComponent == "mainnet" }
+        let url = try #require(files?.first)
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(json["network"] as? String == "main")
+        #expect(json["height"] as? String == "3565000")
+        #expect(json["hash"] as? String == "0000000000d850f57b9940a21e5865ed268fbb14ce7a48c8726a7e9bb3d3304f")
+        #expect(json["time"] as? Int == 1_794_477_230)
+        for tree in ["saplingTree", "orchardTree", "ironwoodTree"] {
+            let hex = try #require(json[tree] as? String)
+            #expect(!hex.isEmpty && hex.allSatisfy(\.isHexDigit))
+        }
     }
 }
 

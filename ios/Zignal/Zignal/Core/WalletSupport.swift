@@ -28,18 +28,20 @@ struct WalletSettings: Codable, Equatable, Sendable {
         }
     }
 
-    /// The first server is used for syncing; the rest are fallbacks.
+    /// Only the first server is used, for syncing and for sending. The others are there to be
+    /// moved to the top by hand (Network settings); the app never switches on its own.
     var servers: [Server]
     var torEnabled: Bool
 
-    /// Public lightwalletd servers listed in the Zcash Swift SDK's own sample app. Not run by
-    /// Zignal. The user can replace them with any server, including their own.
+    /// Public lightwalletd servers from three separate operators: zec.rocks, Stardust and Cake
+    /// Wallet. Not run by Zignal. The user can replace them with any server, including their own.
     static let defaultServers: [Server] = [
         Server(host: "zec.rocks", port: 443),
         Server(host: "na.zec.rocks", port: 443),
         Server(host: "eu.zec.rocks", port: 443),
-        Server(host: "lwd1.zcash-infra.com", port: 9067),
-        Server(host: "lwd2.zcash-infra.com", port: 9067),
+        Server(host: "us.zec.stardust.rest", port: 443),
+        Server(host: "eu.zec.stardust.rest", port: 443),
+        Server(host: "zec-node.cakewallet.com", port: 443),
     ]
 
     /// Tor starts off (faster, more reliable start); the user can turn it on in Network.
@@ -50,6 +52,21 @@ extension ProfileKeyset {
     /// Names this profile's wallet files ("c_<alias>_data.db" and so on). Derived from the
     /// profile key, so it says nothing about which profile is which.
     var walletAlias: String { subkeyBytes(KeyLabel.walletAlias, count: 8).hexString }
+}
+
+/// Where a wallet restored from its recovery phrase starts scanning.
+///
+/// The restore screen asks only for a day, but the date it hands over keeps the time of day the
+/// screen was opened at, which can be later than the wallet's real start on that day. The SDK
+/// starts from the newest bundled checkpoint before that moment, and a checkpoint made later
+/// that same day would skip the wallet's first transactions. So scanning starts at the
+/// beginning of the day before the picked one: at most a day more to scan, never too late,
+/// whatever the phone's time zone.
+enum RestoreStart {
+    static func date(for picked: Date, calendar: Calendar = .current) -> Date {
+        let startOfDay = calendar.startOfDay(for: picked)
+        return calendar.date(byAdding: .day, value: -1, to: startOfDay) ?? startOfDay.addingTimeInterval(-86_400)
+    }
 }
 
 /// ZIP-321 payment requests for the wallet.

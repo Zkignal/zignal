@@ -33,11 +33,20 @@ releases came out on October 21-22, 2026.
   - Patch releases with security fixes: `tokio` 1.53.3 (RUSTSEC-2026-0386), and, used by arti,
     the Tor client, `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2 (RUSTSEC-2026-0391,
     -0398, -0403, -0410) and `event-listener` 5.4.2 (RUSTSEC-2026-0221).
-  - The two remaining RustSec advisories in `Cargo.lock` come in through arti, which Zignal
-    leaves off by default, and have no compatible fix: `rsa` (the Marvin attack targets
-    private-key decryption; a Tor client only verifies signatures) and `crypto-bigint` (SSH key
-    parsing for onion services, which Zignal doesn't use). They clear when arti moves to newer
-    versions.
+  - RustSec advisories left in `Cargo.lock` (November 14, 2026):
+    - through arti, which Zignal leaves off by default, with no compatible fix: `rsa`
+      (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
+      only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; SSH key parsing for
+      onion services, which Zignal doesn't use). They clear when arti moves to newer versions;
+    - `libsqlite3-sys` 0.35.0 (RUSTSEC-2026-0459): the bundled SQLite can return uninitialized
+      memory when it opens a database together with a crafted `-wal` file. Only the app writes
+      these databases (the wallet's and Tor's), inside its own container. The fix
+      (`libsqlite3-sys` 0.39 with `rusqlite` 0.41) needs newer releases of librustzcash and
+      arti: `zcash_client_sqlite` 0.23, `libzcashlc` and `tor-dirmgr` 0.43 use `rusqlite` 0.37;
+    - `rustix` 1.1.4 (RUSTSEC-2026-0486, informational): unsound when an extended-attribute
+      call gets an empty buffer. It comes in through `tempfile` (used by arti and
+      `libzcashlc`); Zignal makes no such call. Version 1.1.6 fixes it and is a compatible
+      update; it isn't in the lock yet.
   - EIP-681 parsing and the Orchard-to-Ironwood pool migration are left out; Zignal doesn't use
     them. `rust/src/eip681.rs` and `rust/src/migration.rs` are stubs that
     `Scripts/gen_stubs.py` generates from the upstream files of the same name: same C
@@ -171,3 +180,25 @@ never gives one out; restore the words in a full wallet to recover such funds).
 Files: `Sources/ZcashLightClientKit/Block/Actions/FetchUTXOsAction.swift`,
 `Sources/ZcashLightClientKit/Block/Enhance/BlockEnhancer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
+
+## Change: a recent mainnet checkpoint (Zignal `dev` only)
+
+**Problem.** The newest bundled mainnet checkpoint was block 3,390,000 (June 2026), before NU6.3
+and NU7. The SDK uses bundled checkpoints in two places: a wallet restored from its recovery
+phrase starts scanning at the newest checkpoint before the date the user gives
+(`BundleCheckpointSource.estimateBirthdayHeight`), and a new wallet that can't reach the server
+while it's created starts at the newest checkpoint. A new wallet created online already starts
+near the chain tip (it asks the server for a recent tree state).
+
+**Change.** `Sources/ZcashLightClientKit/Resources/checkpoints/mainnet/3565000.json` (block
+3,565,000, November 12, 2026, after NU7), in the same format as the others plus the Ironwood
+tree (`ironwoodTree`, which `Checkpoint` already reads). It was fetched with the SDK's own
+`getTreeState` from two separate operators (zec.rocks and Stardust); every field matched. The
+app starts a restore at the beginning of the day before the date picked (`RestoreStart` in the
+app), so a checkpoint later on the picked day is never used. A restore picked on November 14,
+2026 or later now scans from block 3,565,000 instead of 3,390,000 (in any time zone); dates up
+to November 12 still start at 3,390,000 (safe, slower).
+
+Files: `Sources/ZcashLightClientKit/Resources/checkpoints/mainnet/3565000.json` (new, sha256
+`a988108af7bf2d9ae92a26ed41755f35ee4d08d7e6418b7896635f79510d68be`) and this file. No Swift or
+Rust change in the SDK. Not on the `nu7` branch.

@@ -6,7 +6,47 @@ its entry here in the same commit.
 - `main` (tag `zecathon-final`, October 28, 2026) is the submission and stays as submitted
   until judging ends.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
-- There are no version numbers yet, so each entry names its commits. Dates are commit dates.
+- There are no version numbers yet, so each entry names its commits. Dates are the commit
+  dates as git records them.
+
+## 2026-11-15
+
+### Fixed
+- **A restore starts scanning at the beginning of the day before the date picked.** The date
+  kept the time of day the restore screen was opened at, and the SDK starts from the newest
+  checkpoint before that moment, so a checkpoint made later on the picked day could have
+  skipped the wallet's first transactions. It matters now that the SDK has a recent
+  checkpoint. At most a day more to scan. 2 new tests.
+
+### Changed
+- **Default servers from three operators:** zec.rocks (`zec.rocks`, `na.zec.rocks`,
+  `eu.zec.rocks`), Stardust (`us.zec.stardust.rest`, `eu.zec.stardust.rest`) and Cake Wallet
+  (`zec-node.cakewallet.com`). `lwd1` and `lwd2.zcash-infra.com` no longer exist and are
+  gone from the list. Only the first server is used, and it's still `zec.rocks`, so nothing
+  changes for a profile that keeps the defaults; Restore defaults brings the new list. 1 new
+  test.
+
+### Added
+- **A recent mainnet checkpoint** in the SDK: block 3,565,000 (November 12, 2026, after NU7),
+  with the Ironwood tree, fetched from two separate operators and matched field by field. A
+  wallet restored with a date of November 14, 2026 or later scans from it instead of from
+  block 3,390,000. 1 new test checks the app ships it.
+
+### Documentation
+- README, from an outside review of `775e08d`: what a leaked viewing key still shows (each
+  memo's short header: that Zignal is in use, a day's messages grouped by chat, how long each
+  one is, when a chat started), and choosing the three PINs several digits apart.
+- README, brought in line with the code: a successful unlock resets the wrong-PIN count; a
+  panic unlock saves the profile files once more than other unlocks before the decoy shows
+  (the 2026-11-12 entry said it takes as long as any other); files written back after a wipe
+  are deleted at a later unlock; an older install keeps using its unsealed vault, with no
+  notice, while the Secure Enclave seal can't be made.
+- README and `ZIGNAL-PATCHES.md`: the RustSec advisories published after November 4
+  (`libsqlite3-sys`, RUSTSEC-2026-0459; `rustix`, RUSTSEC-2026-0486). README: the tests up
+  to November 14, and build commands that each run in their own folder. This changelog says
+  that its dates are the commit dates as git records them.
+- README: the default servers, the SDK's four changes on `dev`, the test list, and the roadmap
+  entry for faster restores.
 
 ## 2026-11-14
 
@@ -14,17 +54,17 @@ its entry here in the same commit.
 - **The Rust core's build keeps the build machine out of the library.** Rust records source
   paths for error messages, and on a Mac they include the builder's account name, which would
   end up in the app. `zkw-ffi/build-ios.sh` now removes them and stops if the library still
-  contains the home folder or account name, as the SDK's build already did.
+  contains the home folder or account name, as the SDK's build already did. (`f8b3881`)
 
 ### Added
 - **A privacy manifest** (`PrivacyInfo.xcprivacy`), which Apple requires before an upload: the
   app tracks no one, collects no data, and uses its own settings (`UserDefaults`), the
   dates of its own files, and the free storage space (`statfs`, used by libraries linked
   into the app).
-  1 new test checks the app ships it.
+  1 new test checks the app ships it. (`f8b3881`)
 
 ### Documentation
-- README: TestFlight isn't public yet; private testing comes first, then a public link.
+- README: TestFlight isn't public yet; private testing comes first, then a public link. (`f8b3881`)
 
 ## 2026-11-12
 

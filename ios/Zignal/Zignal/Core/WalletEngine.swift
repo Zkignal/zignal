@@ -98,7 +98,7 @@ final class WalletEngine {
             )
             let sync = SDKSynchronizer(initializer: initializer)
             synchronizer = sync
-            let birthday = restoreFrom.map { sync.estimateBirthdayHeight(for: $0) }
+            let birthday = restoreFrom.map { sync.estimateBirthdayHeight(for: RestoreStart.date(for: $0)) }
             let result = try await sync.prepare(with: seed, walletBirthday: birthday, name: "Zignal", keySource: nil)
             guard synchronizer === sync else { return } // locked while preparing
             guard result == .success, let first = try await sync.listAccounts().first else {
