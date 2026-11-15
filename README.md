@@ -29,7 +29,8 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | |
+| Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | |
+| Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | `5e795ee` |
 | Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | `f8b3881` |
 | Nov 12 | **A panic unlock no longer waits for the clean-up, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | `775e08d` |
 | Nov 11 | **Smaller fixes from the November reviews.** Profile files are written in a random order. The recovery words appear only once the app knows the screen isn't being recorded. Changing the server or Tor and then locking can't start a stopped wallet again, and a panic wipe waits for such a change to finish. Message text and the wallet address are copied only with Copy, which stays on this phone. | Each write makes a new file, so a fixed order let file IDs show which profile was saved. A recording already running could catch the words in its first frame. A server switch restarted the wallet even after a lock, so it could write a wiped profile's files again. Selected text went to the general pasteboard: other Apple devices, no expiry. | `487ba86` |
@@ -61,7 +62,7 @@ Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
 - the app's tests on the phone after each change from November 10 on;
 - messages both ways between two iPhones (November 14).
 
-102 app tests and 2 UI tests pass.
+108 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -157,7 +158,7 @@ that's on the roadmap.
   Zignal only uses shielded addresses: to fund it from an exchange, withdraw to a wallet that
   accepts transparent deposits (such as ZODL), shield there, then send to Zignal.
   On one phone: New chat > Show my invite. On the other: New chat > Scan or paste an invite,
-  then write a first message.
+  then write a first message. Only one of you scans.
 - **One iPhone, on chain:** set up and fund both profiles, then in one profile New chat >
   Show my invite > Copy invite, and in the other New chat > Scan or paste an invite > Paste.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
@@ -284,6 +285,8 @@ that's on the roadmap.
 - Changing the server or Tor can take a few seconds. If the profile locks meanwhile, the
   wallet is stopped again when the change finishes (a server switch used to restart it),
   and a panic wipe waits for the change like it waits for a wallet that is stopping.
+- On the recovery phrase screen, the panic PIN counts as a wrong PIN, like the other
+  profile's PIN: it never shows a phrase there and never wipes there.
 - The app never shows which profile is open.
 
 **Storage**
@@ -428,9 +431,9 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 102 app tests and the 2 UI tests. They cover:
-  - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), and a timing
-    test for each unlock step;
+- Cmd+U runs the 108 app tests and the 2 UI tests. They cover:
+  - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), the panic PIN
+    never showing a recovery phrase, and a timing test for each unlock step;
   - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
     install's Keychain items under it, a move cut short, and a sealed vault winning over an
     older plain copy after a panic wipe, and a new seal each time the vault is stored;
@@ -440,7 +443,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     profile files, and a wipe counted finished only after two clean unlocks;
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
-    the core, and copying an invite as text;
+    the core, copying an invite as text, refusing an invite used before, and asking before a
+    chat with an existing contact starts over;
   - memo filtering, wallet settings and messages, the default servers, where a restore
     starts scanning, waiting for stopped wallets and for settings changes, and removing the
     SDK's old entries from the app's preferences;
@@ -576,6 +580,10 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   Double Ratchet applies.
 - **Unused invites** stay valid for about three weeks, and whoever uses one first becomes that
   contact. Compare safety numbers before trusting a chat.
+- **Starting a chat:** only one person scans. If both scan each other's invite before either
+  phone has read the other's first message, the chat breaks on both phones without a sign;
+  the invite screens say so, and a fix needs the next invite format. An invite used before
+  is refused, and a new invite from an existing contact asks before starting the chat over.
 - **Spam:** anyone with one of your addresses can send you contact requests (not shown in the
   app yet) or partial messages for the price of a fee. Zignal's core keeps at most 32 requests
   and 64 incomplete messages, dropping the oldest first.
@@ -667,6 +675,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-11 | `487ba86` | `dev`: random file write order; words hidden until capture is known; no wallet restart after lock; local copy; network privacy section |
 | 2026-11-12 | `775e08d` | `dev`: panic clean-up after the decoy shows; no renamed files; no transparent-address queries |
 | 2026-11-14 | `f8b3881` | `dev`: release readiness: no build paths in the Rust core; privacy manifest; TestFlight wording |
+| 2026-11-15 | `5e795ee` | `dev`: checkpoint 3,565,000; default servers from three operators; restore start a day earlier |
 
 ## Credits
 

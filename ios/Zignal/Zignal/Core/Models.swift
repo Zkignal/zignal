@@ -33,6 +33,10 @@ struct ProfileData: Codable, Equatable {
     /// profile left. The wipe counts as finished after two, so a wallet that wrote its files
     /// late is still caught. Nil otherwise.
     var wipeCleanPasses: Int?
+    /// Fingerprints (`InviteCode.fingerprint`) of the invites this profile has accepted, oldest
+    /// first. An invite works only once: accepting it again would only break the chat it
+    /// started, so it's refused. Nil when there are none.
+    var acceptedInvites: [Data]?
 }
 
 /// A profile being restored from its recovery phrase, waiting for PINs to be set.

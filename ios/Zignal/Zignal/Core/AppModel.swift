@@ -238,8 +238,8 @@ final class AppModel {
 
     /// Shows the open profile's recovery phrase after checking its PIN again. Attempts count
     /// toward the same wrong-PIN limit as unlocking. A PIN for the other profile is treated as
-    /// wrong, and the vault returned by the check is never saved, so entering the panic PIN
-    /// here can't trigger the silent wipe.
+    /// wrong, and so is the panic PIN (`PhraseCheck`). The vault returned by the check is never
+    /// saved, so entering the panic PIN here can't trigger the silent wipe.
     func revealRecoveryPhrase(pin: String, for session: ProfileSession) async -> PhraseReveal {
         do {
             guard try updateLockout() == nil else { return .waiting }
@@ -248,7 +248,8 @@ final class AppModel {
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
-            guard let secret = result.secret, session.belongs(to: try ProfileKeyset(secret: secret)) else {
+            guard let secret = PhraseCheck.secret(result, stored: vault),
+                  session.belongs(to: try ProfileKeyset(secret: secret)) else {
                 try updateLockout()
                 return .wrongPin
             }

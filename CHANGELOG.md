@@ -11,12 +11,26 @@ its entry here in the same commit.
 
 ## 2026-11-15
 
+### Security
+- **The recovery phrase screen treats the panic PIN as a wrong PIN.** The panic PIN opens the
+  decoy too, so on that screen it showed the decoy's recovery phrase without wiping anything:
+  someone holding the duress PIN could find the panic PIN there, safely, and then avoid it on
+  the lock screen. Found by Zignal's own pressure test. 1 new test.
+
 ### Fixed
 - **A restore starts scanning at the beginning of the day before the date picked.** The date
   kept the time of day the restore screen was opened at, and the SDK starts from the newest
   checkpoint before that moment, so a checkpoint made later on the picked day could have
   skipped the wallet's first transactions. It matters now that the SDK has a recent
-  checkpoint. At most a day more to scan. 2 new tests.
+  checkpoint. At most a day more to scan. 2 new tests. (`5e795ee`)
+- **An invite used before is refused.** An invite works only once: the inviter's phone
+  refuses a second start from it. Accepting it again replaced the chat on this phone with one
+  the contact never got, so neither side could read the other any more, and neither phone
+  showed it. It happened in testing. Each accepted invite's fingerprint (SHA-256) is kept in
+  the profile's sealed data.
+- **A new invite from an existing contact asks first** ("Start over") and says what it does.
+  If the contact's first message has already arrived, scanning their invite asks first too.
+  5 new tests.
 
 ### Changed
 - **Default servers from three operators:** zec.rocks (`zec.rocks`, `na.zec.rocks`,
@@ -24,29 +38,34 @@ its entry here in the same commit.
   (`zec-node.cakewallet.com`). `lwd1` and `lwd2.zcash-infra.com` no longer exist and are
   gone from the list. Only the first server is used, and it's still `zec.rocks`, so nothing
   changes for a profile that keeps the defaults; Restore defaults brings the new list. 1 new
-  test.
+  test. (`5e795ee`)
+- **The invite screens say that only one person scans.** If both people scan each other's
+  invite before either phone has read the other's first message, the chat breaks on both
+  phones; a fix needs the next invite format.
 
 ### Added
 - **A recent mainnet checkpoint** in the SDK: block 3,565,000 (November 12, 2026, after NU7),
   with the Ironwood tree, fetched from two separate operators and matched field by field. A
   wallet restored with a date of November 14, 2026 or later scans from it instead of from
-  block 3,390,000. 1 new test checks the app ships it.
+  block 3,390,000. 1 new test checks the app ships it. (`5e795ee`)
 
 ### Documentation
 - README, from an outside review of `775e08d`: what a leaked viewing key still shows (each
   memo's short header: that Zignal is in use, a day's messages grouped by chat, how long each
-  one is, when a chat started), and choosing the three PINs several digits apart.
+  one is, when a chat started), and choosing the three PINs several digits apart. (`5e795ee`)
 - README, brought in line with the code: a successful unlock resets the wrong-PIN count; a
   panic unlock saves the profile files once more than other unlocks before the decoy shows
   (the 2026-11-12 entry said it takes as long as any other); files written back after a wipe
   are deleted at a later unlock; an older install keeps using its unsealed vault, with no
-  notice, while the Secure Enclave seal can't be made.
+  notice, while the Secure Enclave seal can't be made. (`5e795ee`)
 - README and `ZIGNAL-PATCHES.md`: the RustSec advisories published after November 4
   (`libsqlite3-sys`, RUSTSEC-2026-0459; `rustix`, RUSTSEC-2026-0486). README: the tests up
   to November 14, and build commands that each run in their own folder. This changelog says
-  that its dates are the commit dates as git records them.
+  that its dates are the commit dates as git records them. (`5e795ee`)
 - README: the default servers, the SDK's four changes on `dev`, the test list, and the roadmap
-  entry for faster restores.
+  entry for faster restores. (`5e795ee`)
+- README: starting a chat (only one person scans), the panic PIN on the recovery phrase
+  screen, the test list.
 
 ## 2026-11-14
 

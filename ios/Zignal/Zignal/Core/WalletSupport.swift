@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Server and Tor choices for one profile's wallet. Stored inside that profile's encrypted
@@ -173,6 +174,11 @@ enum InviteCode {
         let start = 6 + addressLength
         guard bytes.count >= start + 32 else { return nil }
         return Data(bytes[start..<start + 32])
+    }
+
+    /// Recognizes an invite seen before without keeping the invite itself: SHA-256 of its bytes.
+    static func fingerprint(_ invite: Data) -> Data {
+        Data(SHA256.hash(data: invite))
     }
 }
 

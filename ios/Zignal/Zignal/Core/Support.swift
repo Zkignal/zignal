@@ -17,6 +17,8 @@ enum ZignalError: LocalizedError {
     case sendRejected(String)
     case invalidInvite
     case ownInvite
+    case inviteAlreadyUsed
+    case existingContact
     case invalidAddress
 
     var errorDescription: String? {
@@ -35,6 +37,8 @@ enum ZignalError: LocalizedError {
         case .sendRejected(let reason): "The network didn't accept the message: \(reason)"
         case .invalidInvite: "That isn't a valid Zignal invite. Check that you copied all of it."
         case .ownInvite: "That's your own invite. Share it with your contact instead."
+        case .inviteAlreadyUsed: "You've already used this invite. An invite works only once: ask your contact for a new one if you need to start over."
+        case .existingContact: "You already have a chat with this contact."
         case .invalidAddress: "This contact's address isn't a shielded Zcash address, so nothing was sent."
         }
     }

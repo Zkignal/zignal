@@ -37,6 +37,8 @@ final class ProfileSession {
     /// Wallet transactions remembered as already read. Older ones drop off; zkw-core's replay
     /// protection still rejects anything that comes back.
     static let maxProcessedTransactions = 5000
+    /// Accepted invites remembered, newest kept (`ProfileData.acceptedInvites`). 32 bytes each.
+    static let maxAcceptedInvites = 500
 
     /// Simulated network delay for the demo contact. Tests set this to zero.
     @ObservationIgnored var demoReplyDelay: Duration = .milliseconds(1500)
@@ -52,6 +54,7 @@ final class ProfileSession {
     /// through `recordWipePass` (see `ProfileData.wipePending`).
     @ObservationIgnored private var wipePending: Bool?
     @ObservationIgnored private var wipeCleanPasses: Int?
+    @ObservationIgnored private var acceptedInvites: [Data]
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
     /// Messages being sent again right now, so a second tap can't send them twice.
@@ -72,6 +75,7 @@ final class ProfileSession {
         preparedNoteValue = loaded.data.preparedNoteValue
         wipePending = loaded.data.wipePending
         wipeCleanPasses = loaded.data.wipeCleanPasses
+        acceptedInvites = loaded.data.acceptedInvites ?? []
     }
 
     /// Records one pass of finishing a silent wipe (see `ProfileData.wipeCleanPasses`). A
@@ -436,8 +440,31 @@ final class ProfileSession {
         return InviteCode.encode(invite)
     }
 
+    /// What accepting an invite would do. Checked when the invite is scanned or pasted, and again
+    /// before the first message is made.
+    enum InviteCheck: Equatable {
+        case new
+        case ownInvite
+        /// This profile accepted the same invite before. The inviter's phone always refuses an
+        /// invite used twice, and accepting it again would replace the chat it started with one
+        /// the contact never gets: neither side could read the other any more.
+        case alreadyUsed
+        /// A new invite from someone already in the contacts: it starts the chat over.
+        case existingContact(name: String)
+    }
+
+    func checkInvite(_ invite: Data) throws -> InviteCheck {
+        guard let inviter = InviteCode.inviterID(invite) else { throw ZignalError.invalidInvite }
+        if inviter == (try inbox.myId()) { return .ownInvite }
+        if acceptedInvites.contains(InviteCode.fingerprint(invite)) { return .alreadyUsed }
+        if let existing = contact(inviter), !existing.isDemo { return .existingContact(name: existing.name) }
+        return .new
+    }
+
     /// Starts a chat from a contact's invite and sends the first message. Returns the contact.
-    func acceptInvite(_ code: String, firstText: String) async -> Data? {
+    /// An invite from an existing contact starts that chat over only with `replacing` (the
+    /// screen asks first); an invite this profile accepted before is always refused.
+    func acceptInvite(_ code: String, firstText: String, replacing: Bool = false) async -> Data? {
         let text = firstText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isClosed, !text.isEmpty else { return nil }
         guard let wallet, wallet.canTransact else {
@@ -452,13 +479,21 @@ final class ProfileSession {
             guard let theirs = InviteCode.address(invite), PaymentRequest.isShieldedAddress(theirs) else {
                 throw ZignalError.invalidAddress
             }
-            guard inviter != (try inbox.myId()) else { throw ZignalError.ownInvite }
+            try requireUsable(invite, replacing: replacing)
             guard text.utf8.count <= Self.maxTextBytes else { throw ZignalError.messageTooLong }
             let address = try await wallet.newAddress()
             guard !isClosed else { return nil }
+            try requireUsable(invite, replacing: replacing) // again: the wait above let other work run
             let out = try inbox.startFromInvite(invite: invite, myAddress: Data(address.utf8), firstText: text)
             let isNew = contact(inviter) == nil
             if isNew { contacts.append(Contact(id: inviter, name: "New contact", added: Date())) }
+            // Saved with the first message, before anything leaves the phone.
+            let fingerprint = InviteCode.fingerprint(invite)
+            let rememberedBefore = acceptedInvites
+            acceptedInvites.append(fingerprint)
+            if acceptedInvites.count > Self.maxAcceptedInvites {
+                acceptedInvites.removeFirst(acceptedInvites.count - Self.maxAcceptedInvites)
+            }
             var message = ChatMessage.outgoing(text, to: inviter, memos: out.memos.count)
             message.status = .sending
             message.pendingMemos = out.memos
@@ -466,6 +501,7 @@ final class ProfileSession {
                 try commitOutgoing(message)
             } catch {
                 if isNew { contacts.removeAll { $0.id == inviter } }
+                acceptedInvites = rememberedBefore
                 throw error
             }
             await transmit(message.id, memos: out.memos, to: out.toAddress)
@@ -473,6 +509,15 @@ final class ProfileSession {
         } catch {
             report(error)
             return nil
+        }
+    }
+
+    private func requireUsable(_ invite: Data, replacing: Bool) throws {
+        switch try checkInvite(invite) {
+        case .new: return
+        case .ownInvite: throw ZignalError.ownInvite
+        case .alreadyUsed: throw ZignalError.inviteAlreadyUsed
+        case .existingContact: guard replacing else { throw ZignalError.existingContact }
         }
     }
 
@@ -577,7 +622,8 @@ final class ProfileSession {
                                walletSettings: walletSettings == .standard ? nil : walletSettings,
                                processedTransactions: processedTransactions,
                                preparedNoteValue: preparedNoteValue,
-                               wipePending: wipePending, wipeCleanPasses: wipeCleanPasses)
+                               wipePending: wipePending, wipeCleanPasses: wipeCleanPasses,
+                               acceptedInvites: acceptedInvites.isEmpty ? nil : acceptedInvites)
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }

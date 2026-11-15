@@ -438,6 +438,24 @@ struct VaultTests {
         #expect(try VaultOps.unlock(vault: panic.vault, pin: "260471").secret == created.decoySecret)
         #expect(try VaultOps.unlock(vault: panic.vault, pin: "731946").secret == created.decoySecret)
     }
+
+    /// The panic PIN opens the decoy too, but never shows its recovery phrase, so someone in the
+    /// decoy can't find the panic PIN there without setting it off.
+    @Test func thePanicPinNeverShowsARecoveryPhrase() throws {
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471", panicPin: "731946")
+        let real = try VaultOps.unlock(vault: created.vault, pin: "583914")
+        let duress = try VaultOps.unlock(vault: created.vault, pin: "260471")
+        let panic = try VaultOps.unlock(vault: created.vault, pin: "731946")
+        #expect(PhraseCheck.secret(real, stored: created.vault) == created.realSecret)
+        #expect(PhraseCheck.secret(duress, stored: created.vault) == created.decoySecret)
+        #expect(panic.secret == created.decoySecret)
+        #expect(PhraseCheck.secret(panic, stored: created.vault) == nil)
+        // After a panic wipe, the same holds.
+        let again = try VaultOps.unlock(vault: panic.vault, pin: "731946")
+        #expect(PhraseCheck.secret(again, stored: panic.vault) == nil)
+        let wrong = try VaultOps.unlock(vault: created.vault, pin: "000000")
+        #expect(PhraseCheck.secret(wrong, stored: created.vault) == nil)
+    }
 }
 
 @MainActor
@@ -733,6 +751,76 @@ struct InviteCodeTests {
         let short = Data("ZWI1".utf8) + Data([0x01, 0x00]) + Data(repeating: 0x71, count: 40)
         #expect(InviteCode.inviterID(short) == nil)
         #expect(InviteCode.address(short) == nil)
+    }
+}
+
+/// Re-using an invite, or starting a chat with an existing contact over, is caught before
+/// anything is made or sent.
+@MainActor
+struct InviteGuardTests {
+    private func someoneElse() throws -> ZkwInbox {
+        try ZkwInbox(seed: secureRandom(32), now: unixNow())
+    }
+
+    private func open(_ data: ProfileData, _ keys: ProfileKeyset) async throws -> (ProfileSession, ProfileStore) {
+        let store = try makeTempStore()
+        try store.reset(with: [(data, keys)])
+        return (try await ProfileSession.open(keys: keys, store: store), store)
+    }
+
+    @Test func newAndOwnInvites() async throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let (session, _) = try await open(try ProfileSession.emptyData(keys: keys), keys)
+        let theirs = try someoneElse().createInvite(myAddress: Data(sampleAddress.utf8))
+        #expect(try session.checkInvite(theirs) == .new)
+        let mine = try ZkwInbox(seed: keys.identitySeed, now: unixNow()).createInvite(myAddress: Data(sampleAddress.utf8))
+        #expect(try session.checkInvite(mine) == .ownInvite)
+    }
+
+    @Test func aNewInviteFromAContactAsksFirst() async throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let sam = try someoneElse()
+        let samID = try sam.myId()
+        var data = try ProfileSession.emptyData(keys: keys)
+        data.contacts = [Contact(id: samID, name: "Sam", added: Date())]
+        let (session, _) = try await open(data, keys)
+        let invite = try sam.createInvite(myAddress: Data(sampleAddress.utf8))
+        #expect(try session.checkInvite(invite) == .existingContact(name: "Sam"))
+    }
+
+    @Test func aUsedInviteIsRefusedEvenFromAContact() async throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let sam = try someoneElse()
+        let samID = try sam.myId()
+        let used = try sam.createInvite(myAddress: Data(sampleAddress.utf8))
+        var data = try ProfileSession.emptyData(keys: keys)
+        data.contacts = [Contact(id: samID, name: "Sam", added: Date())]
+        data.acceptedInvites = [InviteCode.fingerprint(used)]
+        let (session, _) = try await open(data, keys)
+        #expect(try session.checkInvite(used) == .alreadyUsed)
+        // A new invite from the same contact is another invite: the screen asks first.
+        let fresh = try sam.createInvite(myAddress: Data(sampleAddress.utf8))
+        #expect(InviteCode.fingerprint(fresh) != InviteCode.fingerprint(used))
+        #expect(try session.checkInvite(fresh) == .existingContact(name: "Sam"))
+    }
+
+    @Test func acceptedInvitesAreKeptAcrossSaves() async throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let used = try someoneElse().createInvite(myAddress: Data(sampleAddress.utf8))
+        var data = try ProfileSession.emptyData(keys: keys)
+        data.acceptedInvites = [InviteCode.fingerprint(used)]
+        let (session, store) = try await open(data, keys)
+        let own = WalletSettings(servers: [.init(host: "lwd.example.net", port: 9067)], torEnabled: false)
+        await session.updateWalletSettings(own) // any save
+        #expect(try store.load(keys)?.acceptedInvites == [InviteCode.fingerprint(used)])
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(try reopened.checkInvite(used) == .alreadyUsed)
+    }
+
+    @Test func olderProfileFilesHaveNoAcceptedInvites() throws {
+        let old = Data(#"{"version":1,"inbox":"AQ==","contacts":[],"messages":[]}"#.utf8)
+        #expect(try JSONDecoder().decode(ProfileData.self, from: old).acceptedInvites == nil)
+        #expect(try ProfileSession.emptyData(keys: ProfileKeyset(secret: secureRandom(32))).acceptedInvites == nil)
     }
 }
 

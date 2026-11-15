@@ -37,6 +37,17 @@ enum VaultOps {
     }
 }
 
+/// Which PIN may show the open profile's recovery phrase (`AppModel.revealRecoveryPhrase`).
+enum PhraseCheck {
+    /// The opened profile's secret, or nil for a wrong PIN and for a PIN whose check would wipe a
+    /// profile. The panic PIN opens the decoy too: if it showed the decoy's phrase, someone in
+    /// the decoy could find the panic PIN there without setting it off, and then avoid it.
+    static func secret(_ result: VaultOps.Unlocked, stored: Data) -> Data? {
+        guard result.vault == stored else { return nil }
+        return result.secret
+    }
+}
+
 /// Rules for the unlock, duress and panic PINs.
 enum PinPolicy {
     static let minLength = 6

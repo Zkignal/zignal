@@ -28,6 +28,9 @@ struct ShowInviteView: View {
                             .background(.white, in: .rect(cornerRadius: 16))
                         Text("On your contact's phone: New chat, then Scan or paste an invite.")
                             .multilineTextAlignment(.center)
+                        Text("Only one of you scans. If you both scan each other's invite, the chat won't work.")
+                            .font(.footnote.weight(.semibold))
+                            .multilineTextAlignment(.center)
                         Button(copied ? "Copied" : "Copy invite", systemImage: "doc.on.doc") {
                             Clipboard.copy(code)
                             copied = true
@@ -71,6 +74,9 @@ struct AcceptInviteView: View {
     @State private var errorText: String?
     @State private var cameraReady = false
     @State private var pasted = ""
+    /// The contact's name when the invite comes from someone already in the contacts.
+    @State private var replacing: String?
+    @State private var confirmReplace = false
 
     /// - Parameter onStarted: called with the new contact once the chat has started.
     init(session: ProfileSession, onStarted: @escaping (Data) -> Void) {
@@ -103,20 +109,27 @@ struct AcceptInviteView: View {
                                 .listRowInsets(EdgeInsets())
                         }
                     } footer: {
-                        Text(cameraReady
-                             ? "Paste the invite your contact sent you, or point the camera at their invite."
-                             : "Paste the invite your contact sent you. To scan instead, allow camera access for Zignal in Settings (needs iPhone XS or later).")
+                        Text(scanFooter)
                     }
                 } else {
                     Section {
-                        Label("Invite found", systemImage: "checkmark.circle")
+                        if let replacing {
+                            Label("New invite from \(replacing)", systemImage: "exclamationmark.triangle")
+                        } else {
+                            Label("Invite found", systemImage: "checkmark.circle")
+                        }
                         TextField("First message", text: $firstText, axis: .vertical)
                             .autocorrectionDisabled()
                             .lineLimit(1...6)
                     } footer: {
-                        Text(session.wallet?.canTransact == true
-                             ? "Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.0002 ZEC."
-                             : "Send becomes available once the wallet has started.")
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let replacing {
+                                Text("You already have a chat with \(replacing). Sending starts it over: messages sent on the old chat after that may not arrive. Do this only if \(replacing) made this invite just now, for example after restoring their phone.")
+                            }
+                            Text(session.wallet?.canTransact == true
+                                 ? "Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.0002 ZEC."
+                                 : "Send becomes available once the wallet has started.")
+                        }
                     }
                 }
                 if let errorText {
@@ -132,12 +145,22 @@ struct AcceptInviteView: View {
                         if sending {
                             ProgressView()
                         } else {
-                            Button("Send", action: send).disabled(!canSend)
+                            Button(replacing == nil ? "Send" : "Start over") {
+                                if replacing == nil { send() } else { confirmReplace = true }
+                            }
+                            .disabled(!canSend)
                         }
                     }
                 }
             }
             .interactiveDismissDisabled(sending)
+            .confirmationDialog("Start the chat with \(replacing ?? "this contact") over?",
+                                isPresented: $confirmReplace, titleVisibility: .visible) {
+                Button("Start over", role: .destructive, action: send)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Only if they made this invite just now. If it's the invite you scanned before, cancel: an invite works only once.")
+            }
             .task {
                 // Asks for the camera the first time; returns at once after that.
                 guard InviteScanner.isSupported else { return }
@@ -145,6 +168,13 @@ struct AcceptInviteView: View {
                 cameraReady = InviteScanner.isAvailable
             }
         }
+    }
+
+    private var scanFooter: String {
+        (cameraReady
+         ? "Paste the invite your contact sent you, or point the camera at their invite."
+         : "Paste the invite your contact sent you. To scan instead, allow camera access for Zignal in Settings (needs iPhone XS or later).")
+            + " Only one of you scans: if your contact has scanned your invite, don't scan theirs."
     }
 
     private var canSend: Bool {
@@ -164,6 +194,23 @@ struct AcceptInviteView: View {
             errorText = ZignalError.invalidAddress.errorDescription
             return
         }
+        do {
+            switch try session.checkInvite(invite) {
+            case .new:
+                replacing = nil
+            case .existingContact(let name):
+                replacing = name
+            case .ownInvite:
+                errorText = ZignalError.ownInvite.errorDescription
+                return
+            case .alreadyUsed:
+                errorText = ZignalError.inviteAlreadyUsed.errorDescription
+                return
+            }
+        } catch {
+            errorText = AppModel.describe(error)
+            return
+        }
         code = text
         errorText = nil
     }
@@ -173,7 +220,7 @@ struct AcceptInviteView: View {
         sending = true
         errorText = nil
         Task {
-            let peer = await session.acceptInvite(code, firstText: firstText)
+            let peer = await session.acceptInvite(code, firstText: firstText, replacing: replacing != nil)
             sending = false
             if let peer {
                 // A failed broadcast still starts the chat: the message shows as not sent,
