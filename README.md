@@ -29,7 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | |
+| Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
 | Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
 | Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | `5e795ee` |
@@ -115,12 +115,17 @@ after a screenshot of the same screen (the words above it are cropped out of thi
 </p>
 <p>
   <img src="pics/12-Invite.png" width="300" alt="Add contact: the note that only one of you scans">
+  <img src="pics/15-Invite-Notice.png" width="300" alt="Add contact: a new invite from someone who is already a contact asks before the chat starts over">
 </p>
 
 On `dev`, after the invite changes of November 15. Top left: Show my invite says that only
 one of you scans (if you both scan each other's invite, the chat won't work) and that the
 invite works once. Top right: Add contact refuses an invite that was already used and says
-to ask the contact for a new one. Below: the same note on Add contact, on its own.
+to ask the contact for a new one. Bottom left: the same note on Add contact, on its own.
+Bottom right: a new invite from someone who is already a contact. Add contact warns that
+sending starts the chat over, so messages sent on the old chat may not arrive, and to do it
+only if the contact made the invite just now; the button says Start over and asks once
+more. Taken on the Simulator in dark mode on November 17, so it shows the newer fee text.
 
 ## What works today
 
@@ -738,6 +743,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-15 | `e7bd418` | `dev`: used invites refused; asks before a chat starts over; only one scans; no recovery phrase for the panic PIN |
 | 2026-11-17 | `e62efe0` | `dev`: unlocking no longer earns wrong-PIN tries back |
 | 2026-11-17 | `8a8fac4` | `dev`: README screenshots of the invite screens |
+| 2026-11-17 | `3f731ac` | `dev`: Zignal's copy cleared at lock and unlock; a slow send check says so; README corrections |
 
 ## Credits
 

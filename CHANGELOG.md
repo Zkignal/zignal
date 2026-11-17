@@ -27,27 +27,28 @@ its entry here in the same commit.
   decoy even showed "Invite found" for an invite copied in the real profile. The Lock
   button and every unlock now remove Zignal's copy, unless something else was copied since.
   Going to the background keeps it, so an invite can still be pasted into another app.
-  Found by a November 15 review. 1 new test.
+  Found by a November 15 review. 1 new test. (`3f731ac`)
 
 ### Fixed
 - **A send check that's taking long says so.** After a lock, an interrupted send shows
   "Checking whether it went out…" until the wallet has caught up with the network; with no
   server reachable, that never ended and looked stuck. After a minute it now says that the
   wallet hasn't caught up yet and that Zignal keeps trying. Found by the same review. 1 new
-  test.
+  test. (`3f731ac`)
 - **The first message's fee text** says about 0.00025 ZEC (its four memos and the change
-  make five actions), not 0.0002.
+  make five actions), not 0.0002. (`3f731ac`)
 
 ### Documentation
 - README: the wrong-PIN tries, the test list and the roadmap. (`e62efe0`)
 - README: three screenshots of the invite screens: only one of you scans, an invite works
   once, and a used invite refused. (`8a8fac4`)
-- README: the browser demo under Try it.
+- README: the browser demo under Try it. (`3f731ac`)
 - README: the network fee change at block 3,590,000; what the pasteboard keeps; that a server
   may link Tor fetches to a sync by timing; Zebra's built-in wallet server; what a chat's
   first message shows to a viewing key; that an unused invite's ID doesn't expire; a message
   sent again days later; the test list and the roadmap. A code comment on where the profile
-  key comes from.
+  key comes from. (`3f731ac`)
+- README: a screenshot of the warning before a chat starts over.
 
 ## 2026-11-15
 
