@@ -20,10 +20,12 @@ its entry here in the same commit.
   the 2 hours over); the lock screen says so under the countdown. 5 wrong PINs are free, then
   the wait doubles from 30 seconds to 1 hour as before. A counter that can't be read counts as
   no free tries left, instead of starting over with all of them.
-  Found by Zignal's own pressure test (round 4). 4 new tests.
+  Found by Zignal's own pressure test (round 4). 4 new tests. (`e62efe0`)
 
 ### Documentation
-- README: the wrong-PIN tries, the test list and the roadmap.
+- README: the wrong-PIN tries, the test list and the roadmap. (`e62efe0`)
+- README: three screenshots of the invite screens: only one of you scans, an invite works
+  once, and a used invite refused.
 
 ## 2026-11-15
 

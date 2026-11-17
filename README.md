@@ -29,7 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | |
+| Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
 | Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
 | Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | `5e795ee` |
 | Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | `f8b3881` |
@@ -107,6 +107,19 @@ and wallet, its side of the same conversation, and its wallet syncing.
 On `dev`, on an iPhone. Left: a screen recording of the recovery phrase screen, played back on
 a Mac: while the recording runs, a notice takes the place of the 24 words. Right: the warning
 after a screenshot of the same screen (the words above it are cropped out of this picture).
+
+<p>
+  <img src="pics/14-Invite-One-time-use.png" width="300" alt="Show my invite: only one of you scans, and the invite works once">
+  <img src="pics/13-Invite-Scan-new.png" width="300" alt="Add contact: an invite that was already used is refused">
+</p>
+<p>
+  <img src="pics/12-Invite.png" width="300" alt="Add contact: the note that only one of you scans">
+</p>
+
+On `dev`, after the invite changes of November 15. Top left: Show my invite says that only
+one of you scans (if you both scan each other's invite, the chat won't work) and that the
+invite works once. Top right: Add contact refuses an invite that was already used and says
+to ask the contact for a new one. Below: the same note on Add contact, on its own.
 
 ## What works today
 
@@ -689,6 +702,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-14 | `f8b3881` | `dev`: release readiness: no build paths in the Rust core; privacy manifest; TestFlight wording |
 | 2026-11-15 | `5e795ee` | `dev`: checkpoint 3,565,000; default servers from three operators; restore start a day earlier |
 | 2026-11-15 | `e7bd418` | `dev`: used invites refused; asks before a chat starts over; only one scans; no recovery phrase for the panic PIN |
+| 2026-11-17 | `e62efe0` | `dev`: unlocking no longer earns wrong-PIN tries back |
 
 ## Credits
 
