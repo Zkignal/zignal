@@ -28,11 +28,24 @@ private func withTestSecrets(useSecureEnclave: Bool = SecureEnclave.isAvailable,
     try body(secrets)
 }
 
+@Suite(.serialized)
 struct ClipboardTests {
     @Test @MainActor func copiedInviteReadsBackAsText() {
         Clipboard.copy("zignal:test-invite")
         #expect(UIPasteboard.general.hasStrings)
         #expect(UIPasteboard.general.string == "zignal:test-invite")
+    }
+
+    @Test @MainActor func lockingRemovesOnlyZignalsOwnCopy() {
+        Clipboard.copy("zignal:test-invite")
+        Clipboard.clearOurCopy()
+        #expect(!UIPasteboard.general.hasStrings)
+        // Something copied after Zignal's copy, here or in another app, stays.
+        Clipboard.copy("zignal:test-invite")
+        UIPasteboard.general.string = "copied elsewhere"
+        Clipboard.clearOurCopy()
+        #expect(UIPasteboard.general.string == "copied elsewhere")
+        UIPasteboard.general.items = []
     }
 
     @Test func prepareErrorNamesTheMinimum() {
@@ -1066,6 +1079,12 @@ struct InterruptedSendsTests {
         var delivered = failed([memo(1)])
         delivered.status = .delivered
         #expect(!InterruptedSends.isBeingChecked(delivered, checked: false))
+    }
+
+    @Test @MainActor func aSlowCheckSaysSo() {
+        #expect(InterruptedSends.checkingText(takingLong: false) == "Checking whether it went out…")
+        #expect(InterruptedSends.checkingText(takingLong: true).contains("hasn't caught up"))
+        #expect(ProfileSession.slowCheck == .seconds(60))
     }
 
     @Test func failedSendNotInTheWalletStaysFailed() {

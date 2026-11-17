@@ -29,6 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
 | Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
 | Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | `5e795ee` |
@@ -63,7 +64,7 @@ Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
 - the app's tests on the phone after each change from November 10 on;
 - messages both ways between two iPhones (November 14).
 
-112 app tests and 2 UI tests pass.
+114 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -164,6 +165,7 @@ that's on the roadmap.
 
 ## Try it
 
+- **In a browser:** [the Zignal demo](https://zkignal.github.io/zignal-demo/experience.html), a simulation with the app's own screens and text: no wallet, no keys, nothing sent.
 - **TestFlight:** not public yet. Until then, build from source with Xcode (see Build and
   test); a free Apple ID can install it on your own iPhone.
 - **Two iPhones:** on each, set PINs and back up the recovery phrase, then fund the wallet
@@ -222,8 +224,13 @@ that's on the roadmap.
 - **Shielded only.** Addresses have a single Orchard receiver, and a new one is made for every
   contact and every invite, so contacts can't link you across chats. No transparent address
   is ever shown or used. Since NU6.3, these payments land in the Ironwood shielded pool.
-- **Fees:** standard ZIP-317 fees, 0.0001 ZEC for a one-memo message. Fees are public and
-  reveal roughly how many memos a transaction carried.
+- **Fees:** standard ZIP-317 fees of 5,000 zatoshis per action: 0.0001 ZEC for a one-memo
+  message (two actions) and about 0.00025 ZEC for a chat's first message (four memos and
+  the change). From block 3,590,000 (around November 19 to 20, 2026), the network's
+  standard fee is 1,000 zatoshis per action (ZIP 2009). Zignal keeps paying 5,000 until
+  its Zcash SDK moves to the librustzcash release with the new fee: still valid, just
+  five times more than needed. Fees are public and reveal roughly how many memos a
+  transaction carried.
 - **Receiving:** after each sync, new transactions are read in chain order, each at its own
   block time, so a message read days later still finds its chat.
 - **Delivered** means the transaction is in a block. There are no read receipts, which would
@@ -336,8 +343,11 @@ that's on the roadmap.
 - Third-party keyboards are blocked, and the message box has autocorrect off.
 - Received text is shown verbatim, never rendered as Markdown or links.
 - Copied invites, addresses and message text stay on this phone (no Universal Clipboard)
-  and clear after five minutes. Message text and the wallet address can't be selected;
-  copy them with Copy (touch and hold a message).
+  and expire after five minutes. The Lock button and every unlock remove Zignal's copy
+  sooner, unless something else was copied since, so a copy made in one profile can't be
+  pasted into the other. Going to the background keeps it, so an invite can be pasted into
+  another app; until it expires, any app can read it then. Message text and the wallet
+  address can't be selected; copy them with Copy (touch and hold a message).
 - The recovery words appear only once the app knows the screen isn't being recorded,
   mirrored or shared, so a recording that's already running doesn't catch them.
 
@@ -360,14 +370,18 @@ address and when, is a separate problem, and the app can only solve part of it.
   and reading the chain tip go over Tor, so the server sees a Tor exit instead of your IP
   address. Syncing still connects directly: downloading blocks, tree states and subtree
   roots, which are the same for every wallet. The server learns that you use Zcash and when
-  you sync, not which transactions are yours. Tor depends on no single company, but it's
-  slower.
+  you sync. It doesn't see your IP address on the transactions the wallet fetches over Tor,
+  but it may link them to your sync by timing: the wallet fetches them right after it has
+  downloaded, directly, the blocks that hold them. On a quiet server, or after a long time
+  offline, such a fetch can stand out. Tor depends on no single company, but it's slower.
 - **No wallet identifier:** until November 12, the wallet also sent all of its transparent
   addresses on every sync, directly even with Tor on, which let the server recognize the
   same wallet across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only
   and no longer asks about transparent ones.
 - **Your own server:** point Zignal at a lightwalletd you run, and no third party sees your
-  requests.
+  requests. Zebra 6.4 and later can also serve wallets itself, with an experimental
+  lightwalletd-compatible server (`rpc.lightwalletd_listen_addr`), so a separate
+  lightwalletd isn't needed. Zignal hasn't been tested with it yet.
 
 **Compared with Zodl's relay (November 2026).** Zodl 3.20 sends its wallet requests through
 Oblivious HTTP: a relay run by Cloudflare or Fastly sees your IP address but not the request,
@@ -455,7 +469,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 112 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 114 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -469,14 +483,15 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     profile files, and a wipe counted finished only after two clean unlocks;
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
-    the core, copying an invite as text, refusing an invite used before, and asking before a
-    chat with an existing contact starts over;
+    the core, copying an invite as text and removing only Zignal's own copy at lock,
+    refusing an invite used before, and asking before a chat with an existing contact
+    starts over;
   - memo filtering, wallet settings and messages, the default servers, where a restore
     starts scanning, waiting for stopped wallets and for settings changes, and removing the
     SDK's old entries from the app's preferences;
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
-    transaction and shown as "Checking" until the wallet has looked; and reading a chat's first
-    message before the rest;
+    transaction and shown as "Checking" until the wallet has looked (saying so when that
+    takes long); and reading a chat's first message before the rest;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -513,7 +528,13 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   mined. If it never reached the server, the Zcash SDK resends it every few minutes while the
   app is open, until it's mined or expires (about 50 minutes). When a send fails outright,
   "Tap to send again" sends the same transaction if the wallet still holds it, so a message
-  is paid for once.
+  is paid for once. "Checking" waits for the wallet to catch up with the network; if that
+  takes more than a minute (no server reached, or a long sync), it says so. Zignal keeps
+  trying.
+- **Sending again days later:** a message sent again two or more UTC days after it was
+  written still carries the conversation tag of the day it was written, so the contact's
+  phone doesn't read it, while this phone shows it delivered. Until the fix (see Roadmap),
+  write such a message again instead.
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
@@ -549,8 +570,10 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   its wallet database (which keeps its memos), can see that Zignal is in use, group a day's
   messages by chat, count them, see how long each one is, and see when a chat started. A
   chat's first message also carries its invite's ID, so someone who saw that invite can match
-  the two. Message text and who your contacts are stay encrypted. Encrypting more of the
-  header is on the roadmap.
+  the two, and the IDs of the inviter's prekeys: counters that grow by two each week, so
+  they show roughly how long the inviter's profile has existed. Message text and who your
+  contacts are stay encrypted. Random prekey IDs, and encrypting more of the header, are on
+  the roadmap.
 - **Seed in memory:** while a profile is unlocked, its wallet seed stays in memory to sign
   sends. Swift can't reliably wipe memory after lock; the Rust core wipes its own copies.
 - **PIN strength:** with a copy of the Keychain, PINs can only be tried on the phone itself,
@@ -604,8 +627,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **First message of a chat:** forward secrecy for the very first message rests on the weekly
   rotation of signed prekeys; there are no one-time prekeys yet. From the first reply on, the
   Double Ratchet applies.
-- **Unused invites** stay valid for about three weeks, and whoever uses one first becomes that
-  contact. Compare safety numbers before trusting a chat.
+- **Unused invites:** an invite stops working after two to three weeks: by then the keys it
+  carries have been replaced. Its ID, though, stays valid until it's used: someone who
+  holds an old unused invite and any newer invite of yours can still start a chat from the
+  old one, months later. Whoever uses an invite first becomes that contact. Show an invite
+  only to the person it's for, and compare safety numbers before trusting a chat. Expiry
+  for the ID is on the roadmap.
 - **Starting a chat:** only one person scans. If both scan each other's invite before either
   phone has read the other's first message, the chat breaks on both phones without a sign;
   the invite screens say so, and a fix needs the next invite format. An invite used before
@@ -651,6 +678,13 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   The PIN vault sealed by the Secure Enclave, a wrong-PIN wait that doesn't follow the
   clock, finishing a panic wipe that was cut short, the fixes of November 11 and 12, and
   wrong-PIN tries that unlocking doesn't give back are done on `dev`.
+- **From the November 15 review:** a message sent again days later tagged with the day it's
+  sent, so the contact reads it; an unused invite's ID that expires with its keys and
+  accepts only the keys it carried; random prekey IDs instead of counters; and a random
+  delay before fetches over Tor (or blocks over Tor too), so a fetch can't be timed to a
+  sync. Removing Zignal's copy from the pasteboard at lock and unlock is done on `dev`.
+- **Lower fees:** the Zcash SDK on the librustzcash release with the ZIP 2009 fee (1,000
+  zatoshis per action), with the app's fee texts in the same change.
 - **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
   with an earlier date doesn't scan from June. (A new wallet already starts near the chain
   tip.)
@@ -703,6 +737,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-15 | `5e795ee` | `dev`: checkpoint 3,565,000; default servers from three operators; restore start a day earlier |
 | 2026-11-15 | `e7bd418` | `dev`: used invites refused; asks before a chat starts over; only one scans; no recovery phrase for the panic PIN |
 | 2026-11-17 | `e62efe0` | `dev`: unlocking no longer earns wrong-PIN tries back |
+| 2026-11-17 | `8a8fac4` | `dev`: README screenshots of the invite screens |
 
 ## Credits
 

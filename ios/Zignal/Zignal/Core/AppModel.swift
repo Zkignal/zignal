@@ -219,6 +219,9 @@ final class AppModel {
     /// Shows an opened profile and starts its wallet, unless the app went to the background
     /// while it was opening.
     private func show(_ session: ProfileSession, walletSeed: Data) {
+        // Whatever Zignal copied before this unlock (a message, an invite, an address) goes, so
+        // it can't be pasted into the profile now opening: the other one may be the decoy.
+        Clipboard.clearOurCopy()
         if inBackground {
             session.close()
             phase = .locked
@@ -263,7 +266,11 @@ final class AppModel {
         }
     }
 
-    func lock() {
+    /// Locks the open profile. The Lock button also removes Zignal's copy from the pasteboard;
+    /// going to the background keeps it (until it expires after five minutes, or the next unlock),
+    /// so an invite or address copied here can still be pasted into another app.
+    func lock(clearingClipboard: Bool = true) {
+        if clearingClipboard { Clipboard.clearOurCopy() }
         guard case .unlocked(let session) = phase else { return }
         session.close()
         phase = .locked
@@ -272,7 +279,7 @@ final class AppModel {
     /// Locks as soon as the app goes to the background.
     func scenePhaseChanged(_ newPhase: ScenePhase) {
         inBackground = newPhase == .background
-        if inBackground { lock() }
+        if inBackground { lock(clearingClipboard: false) }
     }
 
     // MARK: - Helpers

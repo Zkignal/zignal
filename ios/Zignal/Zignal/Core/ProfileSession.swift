@@ -25,6 +25,11 @@ final class ProfileSession {
     /// False until the wallet has checked this session's interrupted sends once (see
     /// `reconcileInterruptedSends`). Until then they show "Checking…" instead of "Not sent".
     private(set) var checkedInterruptedSends = false
+    /// True once that first check has taken longer than `slowCheck` (it waits for the wallet to
+    /// catch up with the network: no server reached, or a long sync): "Checking…" then says so
+    /// instead of looking stuck.
+    private(set) var checkTakingLong = false
+    static let slowCheck: Duration = .seconds(60)
 
     /// Whether splitting the balance would help right now (see `ChatReadiness`).
     var chatReadiness: ChatReadiness? {
@@ -305,6 +310,11 @@ final class ProfileSession {
                                   restoreFrom: walletRestored ? walletCreated : nil)
         engine.onChange = { [weak self] in await self?.refreshFromWallet() }
         wallet = engine
+        Task { [weak self] in
+            try? await Task.sleep(for: ProfileSession.slowCheck)
+            guard let self, !self.isClosed, !self.checkedInterruptedSends else { return }
+            self.checkTakingLong = true
+        }
         await engine.start()
     }
 

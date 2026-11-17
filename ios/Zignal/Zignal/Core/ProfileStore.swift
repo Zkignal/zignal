@@ -34,9 +34,9 @@ struct ProfileKeyset {
 ///     body   = ChaCha20-Poly1305(profile key, JSON)
 ///
 /// The device key lives in the Keychain, sealed by this phone's Secure Enclave (`DeviceSecrets`),
-/// so it can't be used off the phone. The profile key comes from that profile's own PIN, so even
-/// with the device key nobody can see where a profile's data ends, or how much there is, without
-/// that PIN.
+/// so it can't be used off the phone. The profile key comes from that profile's own secret, which
+/// is stored only inside the PIN vault (`ProfileKeyset`), so even with the device key nobody can
+/// see where a profile's data ends, or how much there is, without that profile's PIN.
 ///
 /// Every save re-seals the outer layer of every file with fresh nonces, writes all of them at
 /// one common size and gives them the same timestamps, so all files change together whichever

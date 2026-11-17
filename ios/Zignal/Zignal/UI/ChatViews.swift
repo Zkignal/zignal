@@ -131,7 +131,8 @@ struct ConversationView: View {
                     ForEach(thread) { message in
                         MessageBubble(message: message, showsStatus: !isDemo,
                                       checking: InterruptedSends.isBeingChecked(
-                                          message, checked: session.checkedInterruptedSends)) {
+                                          message, checked: session.checkedInterruptedSends),
+                                      checkTakingLong: session.checkTakingLong) {
                             Task { await session.retry(message.id) }
                         }
                         .id(message.id)
@@ -238,6 +239,8 @@ private struct MessageBubble: View {
     let showsStatus: Bool
     /// A send cut short by a lock, waiting for the wallet's first check after unlock.
     let checking: Bool
+    /// That check has taken longer than `ProfileSession.slowCheck`.
+    let checkTakingLong: Bool
     let retry: () -> Void
 
     var body: some View {
@@ -258,7 +261,7 @@ private struct MessageBubble: View {
                         Button("Copy", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
                     }
                 if showsStatus && checking {
-                    Label("Checking whether it went out…", systemImage: "clock")
+                    Label(InterruptedSends.checkingText(takingLong: checkTakingLong), systemImage: "clock")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else if showsStatus && message.outgoing && message.status == .failed {

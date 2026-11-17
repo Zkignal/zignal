@@ -127,7 +127,7 @@ struct AcceptInviteView: View {
                                 Text("You already have a chat with \(replacing). Sending starts it over: messages sent on the old chat after that may not arrive. Do this only if \(replacing) made this invite just now, for example after restoring their phone.")
                             }
                             Text(session.wallet?.canTransact == true
-                                 ? "Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.0002 ZEC."
+                                 ? "Your first message starts the encrypted chat. It goes out as one shielded transaction; the network fee is about 0.00025 ZEC."
                                  : "Send becomes available once the wallet has started.")
                         }
                     }
@@ -291,15 +291,30 @@ struct InviteScanner: UIViewControllerRepresentable {
     }
 }
 
-/// Copies to this phone only: never to other devices through Universal Clipboard, and
-/// cleared after five minutes. Stored as UTF-8 plain text, the type that the system Paste
-/// button and other apps read as text.
+/// Copies to this phone only: never to other devices through Universal Clipboard. The copy
+/// expires after five minutes; the Lock button and the next unlock remove it sooner (see
+/// `clearOurCopy`). Going to the background keeps it, so it can be pasted into another app.
+/// Stored as UTF-8 plain text, the type that the system Paste button and other apps read as text.
+@MainActor
 enum Clipboard {
-    @MainActor
+    /// The pasteboard's change count right after Zignal's last copy. While it's unchanged, what's
+    /// on the pasteboard is still Zignal's copy.
+    private static var ourCopy: Int?
+
     static func copy(_ text: String) {
         UIPasteboard.general.setItems(
             [[UTType.utf8PlainText.identifier: text]],
             options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(300)]
         )
+        ourCopy = UIPasteboard.general.changeCount
+    }
+
+    /// Removes Zignal's copy if it's still on the pasteboard, so a message, an invite or an
+    /// address copied in one profile can't be pasted after a lock (into the other profile, or
+    /// into another app). Something copied since, in Zignal or elsewhere, is left alone.
+    static func clearOurCopy() {
+        defer { Self.ourCopy = nil }
+        guard let count = Self.ourCopy, UIPasteboard.general.changeCount == count else { return }
+        UIPasteboard.general.items = []
     }
 }

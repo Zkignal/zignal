@@ -298,6 +298,15 @@ enum InterruptedSends {
         !checked && message.outgoing && message.status == .failed && message.interrupted == true
     }
 
+    /// What such a message says while it waits. The check runs once the wallet has caught up
+    /// with the network; when that takes long (no server reached, or a long sync), it says so.
+    /// Sending again needs the network too, so the button still waits.
+    static func checkingText(takingLong: Bool) -> String {
+        takingLong
+            ? "Still checking whether it went out: the wallet hasn't caught up with the network yet. Zignal keeps trying."
+            : "Checking whether it went out…"
+    }
+
     /// Our transaction still waiting to be mined that carries a message's first memo, if the
     /// wallet holds one. "Send again" sends that same transaction again instead of a new one:
     /// the SDK keeps resending it on its own, so a new one could be paid for twice.
