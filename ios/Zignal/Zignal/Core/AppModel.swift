@@ -117,8 +117,9 @@ final class AppModel {
                 phase = .setup
                 return
             }
-            // Counted before the check; reset only after a successful unlock.
-            try AttemptLimiter.recordAttempt()
+            // Counted before the check. A PIN that opens a profile takes back only its own count:
+            // unlocking, with any of the three PINs, never earns tries back.
+            let before = try AttemptLimiter.recordAttempt()
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
@@ -136,7 +137,7 @@ final class AppModel {
                 // panic PIN was used. A failure here changes nothing and doesn't block the unlock.
                 try? DeviceSecrets.app.write(result.vault, to: .vault)
             }
-            AttemptLimiter.reset()
+            AttemptLimiter.takeBack(to: before)
             lockedUntil = nil
             let keys = try ProfileKeyset(secret: secret)
             if wiped {
@@ -152,7 +153,8 @@ final class AppModel {
             let session = try await ProfileSession.open(keys: keys, store: store)
             show(session, walletSeed: seed)
             // After the profile is on screen, so a panic unlock (or one that finishes an
-            // interrupted wipe) takes as long as any other unlock.
+            // interrupted wipe) doesn't wait for the clean-up. (It still saves the profile files
+            // once more than other unlocks, above: setWipePending.)
             if pending {
                 finishWipe(alias: keys.walletAlias, file: store.fileURL(for: keys), session: session)
             }
@@ -244,7 +246,7 @@ final class AppModel {
         do {
             guard try updateLockout() == nil else { return .waiting }
             guard let vault = try DeviceSecrets.app.read(.vault) else { return .wrongPin }
-            try AttemptLimiter.recordAttempt()
+            let before = try AttemptLimiter.recordAttempt()
             let result = try await Task.detached(priority: .userInitiated) {
                 try VaultOps.unlock(vault: vault, pin: pin)
             }.value
@@ -253,7 +255,7 @@ final class AppModel {
                 try updateLockout()
                 return .wrongPin
             }
-            AttemptLimiter.reset()
+            AttemptLimiter.takeBack(to: before)
             lockedUntil = nil
             return .phrase(try recoveryPhrase(profileSecret: secret))
         } catch {
@@ -288,5 +290,10 @@ final class AppModel {
     nonisolated static func waitMessage(_ seconds: TimeInterval) -> String {
         let s = Int(seconds.rounded(.up))
         return "Too many wrong PINs. Try again in \(s / 60):\(String(format: "%02d", s % 60))."
+    }
+
+    /// Shown under the countdown: what makes the wrong-PIN count start over. Unlocking doesn't.
+    nonisolated static var restNote: String {
+        "After \(AttemptLimiter.quietPeriod / 3_600_000_000_000) hours with no wrong PIN, the count starts over."
     }
 }

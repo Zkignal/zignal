@@ -75,7 +75,10 @@ struct PinStatus: View {
     var body: some View {
         Group {
             if wait > 0 {
-                Text(AppModel.waitMessage(wait)).foregroundStyle(.red).monospacedDigit()
+                VStack(spacing: 4) {
+                    Text(AppModel.waitMessage(wait)).foregroundStyle(.red).monospacedDigit()
+                    Text(AppModel.restNote).foregroundStyle(.secondary)
+                }
             } else if checking {
                 Text("Checking PIN…").foregroundStyle(.secondary)
             } else {

@@ -96,20 +96,29 @@ enum BootClock {
     }
 }
 
-/// Slows down PIN guessing inside the app: 5 free attempts, then a wait that doubles from
-/// 30 seconds up to 1 hour. The wait is measured on `BootClock`, so changing the date or time
-/// doesn't shorten it, and a restart can start it over but never shortens it. A copy of the
+/// Slows down PIN guessing inside the app. 5 wrong PINs are free; past them, each try waits,
+/// doubling from 30 seconds up to 1 hour. After 2 hours with no wrong PIN, every free try is
+/// back. Every PIN that's checked is counted first; a PIN that opens a profile then takes back
+/// only its own count, so unlocking, with any of the three PINs, never clears earlier wrong PINs
+/// (before, it reset the count, and someone who knew the duress PIN was never slowed down).
+/// Only quiet time does: someone guessing gets 5 tries, then has to stop for 2 hours.
+///
+/// Time is measured on `BootClock`, so changing the date or time doesn't move it, and a
+/// restart starts the wait and the 2 hours over but never shortens either. A copy of the
 /// Keychain taken off the phone can't be used to guess PINs elsewhere: the vault is sealed by
 /// this phone's Secure Enclave (`DeviceSecrets`).
 enum AttemptLimiter {
-    struct State: Codable {
+    struct State: Codable, Equatable {
+        /// Wrong PINs that still count: against the free ones, then toward the wait.
         var failures = 0
-        /// `BootClock` at the last attempt. Nil in state saved by older versions, which saved
-        /// a date instead.
+        /// `BootClock` at the last wrong PIN (a PIN that opened a profile takes its own stamp
+        /// back with its count). Nil in state saved by older versions, which saved a date instead.
         var uptime: UInt64?
     }
 
     static let freeAttempts = 5
+    /// After this long on `BootClock` with no wrong PIN, every free try is back (2 hours).
+    static let quietPeriod: UInt64 = 2 * 3600 * 1_000_000_000
     private static let nanosecondsPerSecond = 1_000_000_000.0
 
     static func waitTime(_ state: State, now: UInt64) -> TimeInterval {
@@ -121,32 +130,65 @@ enum AttemptLimiter {
     }
 
     /// A stamp from before a restart (the clock started again below it) or from an older
-    /// version (no stamp) starts the wait over from now.
+    /// version (no stamp) starts the wait, and the 2 hours, over from now: a restart never
+    /// gives a try back.
     static func normalized(_ state: State, now: UInt64) -> State {
-        guard state.failures > 0, state.uptime.map({ now < $0 }) ?? true else { return state }
-        var restarted = state
-        restarted.uptime = now
-        return restarted
+        guard state.failures > 0 else { return state }
+        var result = state
+        if state.uptime.map({ now < $0 }) ?? true { result.uptime = now }
+        return result
+    }
+
+    /// Every free try back once `quietPeriod` has passed since the last wrong PIN.
+    static func rested(_ state: State, now: UInt64) -> State {
+        guard state.failures > 0, let last = state.uptime, now >= last,
+              now - last >= quietPeriod else { return state }
+        return State()
+    }
+
+    /// The state with one more attempt counted at `now`.
+    static func counted(_ state: State, now: UInt64) -> State {
+        var result = rested(normalized(state, now: now), now: now)
+        result.failures += 1
+        result.uptime = now
+        return result
+    }
+
+    /// What a counter that can't be decoded stands for: no free tries left, and the 2 hours
+    /// starting now. Never a fresh start.
+    static func unreadable(now: UInt64) -> State {
+        State(failures: freeAttempts, uptime: now)
     }
 
     /// Throws if the Keychain can't be read, so unlocking fails closed.
     static func load(now: UInt64 = BootClock.now()) throws -> State {
         guard let data = try Keychain.read(.attempts) else { return State() }
-        let saved = (try? JSONDecoder().decode(State.self, from: data)) ?? State()
-        let state = normalized(saved, now: now)
-        if state.uptime != saved.uptime { try save(state) }
+        let saved = try? JSONDecoder().decode(State.self, from: data)
+        let state = rested(normalized(saved ?? unreadable(now: now), now: now), now: now)
+        if saved != state { try save(state) }
         return state
     }
 
     /// Counts an attempt before the PIN is checked, so force-quitting the app during the
-    /// check can't skip it. A successful unlock resets the count.
-    static func recordAttempt(now: UInt64 = BootClock.now()) throws {
-        var state = try load(now: now)
-        state.failures += 1
-        state.uptime = now
-        try save(state)
+    /// check can't skip it. Returns the state from before it, for `takeBack(to:)`.
+    static func recordAttempt(now: UInt64 = BootClock.now()) throws -> State {
+        let before = try load(now: now)
+        try save(counted(before, now: now))
+        return before
     }
 
+    /// After a PIN opened a profile, takes back the attempt `recordAttempt` counted for it, and
+    /// only that one: unlocking never earns tries back, whichever PIN was used. If this can't be
+    /// saved, the attempt stays counted, which is the safe side.
+    static func takeBack(to before: State) {
+        if before.failures == 0 {
+            try? Keychain.delete(.attempts)
+        } else {
+            try? save(before)
+        }
+    }
+
+    /// Clears the count. Only setup uses it: a new vault starts with every free try.
     static func reset() {
         try? Keychain.delete(.attempts)
     }

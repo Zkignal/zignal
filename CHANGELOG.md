@@ -9,13 +9,29 @@ its entry here in the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-17
+
+### Security
+- **Unlocking no longer earns wrong-PIN tries back.** Every successful unlock, with any of
+  the three PINs, reset the wrong-PIN count, so someone who knew the duress PIN could keep
+  guessing, unlocking the decoy between tries, and never reach the wait. Every PIN is still
+  counted before it's checked; one that opens a profile now takes back only its own count.
+  The count starts over after 2 hours with no wrong PIN, on the boot clock (a restart starts
+  the 2 hours over); the lock screen says so under the countdown. 5 wrong PINs are free, then
+  the wait doubles from 30 seconds to 1 hour as before. A counter that can't be read counts as
+  no free tries left, instead of starting over with all of them.
+  Found by Zignal's own pressure test (round 4). 4 new tests.
+
+### Documentation
+- README: the wrong-PIN tries, the test list and the roadmap.
+
 ## 2026-11-15
 
 ### Security
 - **The recovery phrase screen treats the panic PIN as a wrong PIN.** The panic PIN opens the
   decoy too, so on that screen it showed the decoy's recovery phrase without wiping anything:
   someone holding the duress PIN could find the panic PIN there, safely, and then avoid it on
-  the lock screen. Found by Zignal's own pressure test. 1 new test.
+  the lock screen. Found by Zignal's own pressure test. 1 new test. (`e7bd418`)
 
 ### Fixed
 - **A restore starts scanning at the beginning of the day before the date picked.** The date
@@ -27,10 +43,10 @@ its entry here in the same commit.
   refuses a second start from it. Accepting it again replaced the chat on this phone with one
   the contact never got, so neither side could read the other any more, and neither phone
   showed it. It happened in testing. Each accepted invite's fingerprint (SHA-256) is kept in
-  the profile's sealed data.
+  the profile's sealed data. (`e7bd418`)
 - **A new invite from an existing contact asks first** ("Start over") and says what it does.
   If the contact's first message has already arrived, scanning their invite asks first too.
-  5 new tests.
+  5 new tests. (`e7bd418`)
 
 ### Changed
 - **Default servers from three operators:** zec.rocks (`zec.rocks`, `na.zec.rocks`,
@@ -41,7 +57,7 @@ its entry here in the same commit.
   test. (`5e795ee`)
 - **The invite screens say that only one person scans.** If both people scan each other's
   invite before either phone has read the other's first message, the chat breaks on both
-  phones; a fix needs the next invite format.
+  phones; a fix needs the next invite format. (`e7bd418`)
 
 ### Added
 - **A recent mainnet checkpoint** in the SDK: block 3,565,000 (November 12, 2026, after NU7),
@@ -65,7 +81,7 @@ its entry here in the same commit.
 - README: the default servers, the SDK's four changes on `dev`, the test list, and the roadmap
   entry for faster restores. (`5e795ee`)
 - README: starting a chat (only one person scans), the panic PIN on the recovery phrase
-  screen, the test list.
+  screen, the test list. (`e7bd418`)
 
 ## 2026-11-14
 

@@ -29,7 +29,8 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | |
+| Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | |
+| Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
 | Nov 15 | **A recent checkpoint, and default servers from three operators.** The SDK ships a checkpoint at block 3,565,000 (after NU7). The default servers are zec.rocks, Stardust and Cake Wallet; only the first is used, as before. A restore starts scanning at the beginning of the day before the date picked. | A wallet restored with a recent date no longer scans from June. Two of the old default servers no longer exist. The restore date kept the time of day the screen was opened at, so a checkpoint made later that day could have skipped a wallet's first transactions. | `5e795ee` |
 | Nov 14 | **The app's builds keep the build machine out, and the app declares what it uses.** The Rust core's build removes the build machine's file paths and stops if any remain, as the SDK's build already does. A privacy manifest says the app tracks no one, collects no data, and uses its own settings, its own files' dates and the free storage space. | Rust records source paths for error messages, and they include the builder's account name. Apple requires a privacy manifest from apps that use these system features. | `f8b3881` |
 | Nov 12 | **A panic unlock no longer waits for the clean-up, and the wallet no longer sends its transparent addresses.** The clean-up after a panic wipe runs once the decoy is on screen, the wiped profile's file is overwritten under its own name, and the wipe counts as finished only after two unlocks find nothing left. The wallet no longer asks the server about its transparent addresses. | An outside review found that the clean-up (up to 15 seconds) ran before the decoy appeared, so a panic unlock could be told from a duress unlock by its delay, and that finishing a wipe gave the leftover file a new name. The SDK sent all of the wallet's transparent addresses on every sync, without Tor: the same identifier of the wallet each time, even with Tor on. | `775e08d` |
@@ -62,7 +63,7 @@ Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
 - the app's tests on the phone after each change from November 10 on;
 - messages both ways between two iPhones (November 14).
 
-108 app tests and 2 UI tests pass.
+112 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -252,15 +253,25 @@ that's on the roadmap.
   key at the first unlock, without asking for a PIN. Each old copy is deleted only after the
   sealed one has been read back and opened. If the seal can't be made, the app keeps using the
   old copy and tries again the next time it reads it; it doesn't show this yet.
-- 5 wrong PINs are free; after that, each try waits 30 seconds, doubling up to 1 hour, shown
+- 5 wrong PINs are free. Past them, each try waits 30 seconds, doubling up to 1 hour, shown
   as a live countdown. Each try is counted in the Keychain before the PIN is checked, so
-  force-quitting the app doesn't reset the count. The wait is measured on
-  `CLOCK_MONOTONIC_RAW`, which keeps counting while the phone sleeps and can't be set, so
-  changing the date or time doesn't shorten it. A restart can start the wait over but never
-  shortens it.
-- A successful unlock, with any of the three PINs, resets the count, so the wait doesn't slow
-  down someone who knows the duress PIN. The fix is planned: free tries will come back only
-  with time, one every 4 hours, never with an unlock.
+  force-quitting the app doesn't reset the count.
+- **What starts the count over: 2 hours with no wrong PIN.** Unlocking doesn't, with any of
+  the three PINs: a PIN that opens a profile takes back only its own count, so earlier wrong
+  PINs still count. The lock screen says so under the countdown. For example: 4 wrong PINs,
+  then the duress PIN opens the decoy; Lock; PIN 1 opens the real profile; the next wrong PIN
+  (the 5th) waits 30 seconds, the one after it 1 minute, then 2 minutes, and so on, until 2
+  hours pass with no wrong PIN.
+- Why not clear the count on a right PIN: someone who knows the duress PIN could then guess 4
+  PINs, open the decoy, and start again, without ever waiting. With the 2-hour rule they get
+  5 guesses and must then stop for 2 hours: at most about 100 guesses a day, so trying every
+  6-digit PIN would take about 25 years. Clearing it on the real PIN only isn't possible
+  either: the vault doesn't record which PIN opens the real profile, so the decoy can't be
+  told apart from it.
+- A counter that can't be read counts as no free tries left.
+- The wait and the 2 hours are measured on `CLOCK_MONOTONIC_RAW`, which keeps counting while
+  the phone sleeps and can't be set, so changing the date or time doesn't shorten them. A
+  restart starts them over but never shortens them.
 
 **Duress and panic**
 - The duress PIN opens a decoy profile that looks and works like a normal one, with its own
@@ -431,9 +442,11 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 108 app tests and the 2 UI tests. They cover:
-  - PIN rules and the wrong-PIN wait, the three-PIN vault (duress and panic), the panic PIN
-    never showing a recovery phrase, and a timing test for each unlock step;
+- Cmd+U runs the 112 app tests and the 2 UI tests. They cover:
+  - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
+    PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
+    (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
+    each unlock step;
   - the Secure Enclave seal (round trip, tampering, the wrong key or label), moving an older
     install's Keychain items under it, a move cut short, and a sealed vault winning over an
     older plain copy after a panic wipe, and a new seal each time the vault is stored;
@@ -620,12 +633,11 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   resets a chat, and let users revoke unused invites. Hiding the recovery words during screen
   capture and limiting stored contact requests are done on `dev`.
 - **From the November reviews:** a panic wipe that leaves the wallet folder looking the same;
-  PIN rules that keep the three PINs apart, and a wrong-PIN count that a successful unlock
-  doesn't reset; a panic unlock without the extra save; a notice when the Secure Enclave seal
-  can't be made; a memo header that shows less to a viewing key.
+  PIN rules that keep the three PINs apart; a panic unlock without the extra save; a notice
+  when the Secure Enclave seal can't be made; a memo header that shows less to a viewing key.
   The PIN vault sealed by the Secure Enclave, a wrong-PIN wait that doesn't follow the
-  clock, finishing a panic wipe that was cut short, and the fixes of November 11 and 12
-  are done on `dev`.
+  clock, finishing a panic wipe that was cut short, the fixes of November 11 and 12, and
+  wrong-PIN tries that unlocking doesn't give back are done on `dev`.
 - **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
   with an earlier date doesn't scan from June. (A new wallet already starts near the chain
   tip.)
@@ -676,6 +688,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-12 | `775e08d` | `dev`: panic clean-up after the decoy shows; no renamed files; no transparent-address queries |
 | 2026-11-14 | `f8b3881` | `dev`: release readiness: no build paths in the Rust core; privacy manifest; TestFlight wording |
 | 2026-11-15 | `5e795ee` | `dev`: checkpoint 3,565,000; default servers from three operators; restore start a day earlier |
+| 2026-11-15 | `e7bd418` | `dev`: used invites refused; asks before a chat starts over; only one scans; no recovery phrase for the panic PIN |
 
 ## Credits
 

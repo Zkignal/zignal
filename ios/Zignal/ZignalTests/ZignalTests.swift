@@ -97,11 +97,86 @@ struct AttemptLimiterTests {
         #expect(abs(AttemptLimiter.waitTime(state, now: now) - 120) < 0.01)
         #expect(AttemptLimiter.normalized(state, now: now).uptime == now)
         #expect(AttemptLimiter.normalized(AttemptLimiter.State(), now: now).uptime == nil)
+        // A counter saved by a build with a 4-hour refill also carries `refillFrom`: ignored.
+        let refillBuild = Data(#"{"failures":6,"uptime":5000000000,"refillFrom":4000000000}"#.utf8)
+        let kept = try JSONDecoder().decode(AttemptLimiter.State.self, from: refillBuild)
+        #expect(kept == AttemptLimiter.State(failures: 6, uptime: 5 * Self.second))
+    }
+
+    /// Round 4's R4-1: four wrong PINs, then the duress PIN, again and again, never reached the
+    /// wait, because every unlock reset the count. Now an unlock takes back only its own count.
+    @Test func unlockingWithAnyPinEarnsNoTriesBack() {
+        var state = AttemptLimiter.State()
+        var now = 1_000 * Self.second
+        func wrong() {
+            state = AttemptLimiter.counted(state, now: now)
+            now += Self.second
+        }
+        func unlock() {
+            let before = state
+            _ = AttemptLimiter.counted(before, now: now) // counted before the check...
+            state = before // ...and taken back once the PIN opened a profile
+            now += Self.second
+        }
+        for _ in 1...4 { wrong() }
+        unlock()
+        #expect(state.failures == 4)
+        #expect(AttemptLimiter.waitTime(state, now: now) == 0)
+        wrong()
+        #expect(state.failures == 5)
+        #expect(AttemptLimiter.waitTime(state, now: now) > 28)
+        unlock()
+        #expect(state.failures == 5)
+    }
+
+    /// After 2 hours on the boot clock with no wrong PIN, every free try is back. A wrong PIN
+    /// before then starts the 2 hours over; a PIN that opens a profile changes nothing.
+    @Test func twoQuietHoursBringEveryFreeTryBack() {
+        let start = 1_000 * Self.second
+        let hour = 3_600 * Self.second
+        var state = AttemptLimiter.State()
+        for i in 0..<7 { state = AttemptLimiter.counted(state, now: start + UInt64(i) * Self.second) }
+        let last = start + 6 * Self.second
+        #expect(state.failures == 7)
+        #expect(state.uptime == last)
+        #expect(AttemptLimiter.rested(state, now: last + 2 * hour - Self.second).failures == 7)
+        #expect(AttemptLimiter.rested(state, now: last + 2 * hour) == AttemptLimiter.State())
+        // A wrong PIN after the 2 hours is the first of 5 free ones again.
+        let fresh = AttemptLimiter.counted(state, now: last + 3 * hour)
+        #expect(fresh.failures == 1)
+        #expect(AttemptLimiter.waitTime(fresh, now: last + 3 * hour) == 0)
+        // A wrong PIN before the 2 hours are up adds to the count and starts them over.
+        let again = AttemptLimiter.counted(state, now: last + hour)
+        #expect(again.failures == 8)
+        #expect(AttemptLimiter.rested(again, now: last + 2 * hour).failures == 8)
+        #expect(AttemptLimiter.rested(again, now: last + 3 * hour).failures == 0)
+    }
+
+    /// A restart never gives a try back: the 2 hours start over, like the wait.
+    @Test func aRestartGivesNoTriesBack() {
+        let saved = AttemptLimiter.State(failures: 6, uptime: 9_000 * Self.second)
+        let now = 20 * Self.second // the clock started again after a restart
+        let hour = 3_600 * Self.second
+        let restarted = AttemptLimiter.normalized(saved, now: now)
+        #expect(AttemptLimiter.rested(restarted, now: now + 2 * hour - Self.second).failures == 6)
+        #expect(AttemptLimiter.rested(restarted, now: now + 2 * hour).failures == 0)
+        #expect(AttemptLimiter.counted(saved, now: now).failures == 7)
+    }
+
+    /// A counter that can't be read back counts as no free tries left, never as a fresh start.
+    @Test func anUnreadableCounterLeavesNoFreeTries() {
+        let now = 1_000 * Self.second
+        let state = AttemptLimiter.unreadable(now: now)
+        #expect(state.failures == AttemptLimiter.freeAttempts)
+        #expect(abs(AttemptLimiter.waitTime(state, now: now) - 30) < 0.01)
+        let next = AttemptLimiter.counted(state, now: now + 31 * Self.second)
+        #expect(abs(AttemptLimiter.waitTime(next, now: now + 31 * Self.second) - 60) < 0.01)
     }
 
     @Test func waitMessageCountsDownInMinutesAndSeconds() {
         #expect(AppModel.waitMessage(27) == "Too many wrong PINs. Try again in 0:27.")
         #expect(AppModel.waitMessage(90.2) == "Too many wrong PINs. Try again in 1:31.")
+        #expect(AppModel.restNote == "After 2 hours with no wrong PIN, the count starts over.")
         #expect(AppModel.waitMessage(3600) == "Too many wrong PINs. Try again in 60:00.")
     }
 }
