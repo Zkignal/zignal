@@ -29,6 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | |
 | Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
 | Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
@@ -171,8 +172,9 @@ that's on the roadmap.
 ## Try it
 
 - **In a browser:** [the Zignal demo](https://zkignal.github.io/zignal-demo/experience.html), a simulation with the app's own screens and text: no wallet, no keys, nothing sent.
-- **TestFlight:** not public yet. Until then, build from source with Xcode (see Build and
-  test); a free Apple ID can install it on your own iPhone.
+- **TestFlight:** not public yet: private testing by invitation comes first, then a public
+  link. Until then, build from source with Xcode (see Build and test); a free Apple ID can
+  install it on your own iPhone.
 - **Two iPhones:** on each, set PINs and back up the recovery phrase, then fund the wallet
   with about 0.01 ZEC (Add funds). Received ZEC can be spent after 10 confirmations.
   Receiving messages needs no ZEC: the sender pays the network fee.
@@ -697,7 +699,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   gateway), or on what terms (see [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
 - **Tor library update**, once librustzcash moves to a current arti
   ([zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246)).
-- **Later:** post-quantum protection for every message (not only the handshake), and Android.
+- **Next, after private testing:** post-quantum protection for every message, not only the
+  handshake.
+- **Later:** Android.
 
 ## Development log
 
@@ -744,6 +748,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-17 | `e62efe0` | `dev`: unlocking no longer earns wrong-PIN tries back |
 | 2026-11-17 | `8a8fac4` | `dev`: README screenshots of the invite screens |
 | 2026-11-17 | `3f731ac` | `dev`: Zignal's copy cleared at lock and unlock; a slow send check says so; README corrections |
+| 2026-11-17 | `96bc7ea` | `dev`: README screenshot of the warning before a chat starts over |
 
 ## Credits
 

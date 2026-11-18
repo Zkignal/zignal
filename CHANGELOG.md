@@ -9,6 +9,17 @@ its entry here in the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-18
+
+### Added
+- **An app icon:** two hands forming a Z around a globe, white on black, 1024 x 1024
+  with only its pixels (no EXIF, colour profile or other hidden data). TestFlight and
+  the App Store need one.
+
+### Documentation
+- README: TestFlight under Try it (private testing by invitation first); post-quantum
+  protection for every message moved up the roadmap.
+
 ## 2026-11-17
 
 ### Security
@@ -48,7 +59,7 @@ its entry here in the same commit.
   first message shows to a viewing key; that an unused invite's ID doesn't expire; a message
   sent again days later; the test list and the roadmap. A code comment on where the profile
   key comes from. (`3f731ac`)
-- README: a screenshot of the warning before a chat starts over.
+- README: a screenshot of the warning before a chat starts over. (`96bc7ea`)
 
 ## 2026-11-15
 
