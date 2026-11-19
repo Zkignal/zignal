@@ -29,7 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | |
+| Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
 | Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
 | Nov 15 | **An invite used before is refused, a new invite from a contact asks first, and the recovery phrase screen treats the panic PIN as wrong.** The invite screens say that only one person scans. | Accepting a used invite again broke the chat on both phones without a sign (it happened in testing), and so does scanning each other's invite. The panic PIN opens the decoy too, so on the recovery phrase screen it showed the decoy's words without wiping: someone holding the duress PIN could find the panic PIN there. | `e7bd418` |
@@ -53,7 +53,7 @@ change on `dev` with its commits and gets an entry with each fix.
 | Nov 1 | **The build keeps the builder out of the library.** File paths from the build machine are removed, and the build stops if any remain. The library targets iOS 17.0, the app's minimum. | By default, Rust and C compilers embed source file paths in a library, including the builder's home folder, and from there they end up in the app. | `f66c1c3` |
 | Oct 29 | **Prepare** (formerly "Prepare for chatting") splits your balance only when it helps. It estimates how many messages can go out back to back from the last split. It waits while recent messages' change confirms, instead of splitting again. The button shows Ready, Confirming or Prepare, with one line saying why. | Before, the app could suggest splitting again when it didn't need to, and the long label wrapped onto two lines. | `04cd9fd` `cde5a42` |
 
-Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
+Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
 - existing wallets upgraded to the new wallet database and kept syncing;
 - messages both ways with Tor on and off, before and after NU7 activated (November 6, UTC);
 - Add funds and Prepare;
@@ -63,7 +63,9 @@ Tested on `dev` (November 1 to 14, iPhone, Zcash mainnet):
 - the Secure Enclave seal on the phone: the vault and the device key sealed, no plain copy
   left (November 10);
 - the app's tests on the phone after each change from November 10 on;
-- messages both ways between two iPhones (November 14).
+- messages both ways between two iPhones (November 14);
+- the app icon, then syncing and messages both ways between the real and decoy profiles
+  on one iPhone (November 18).
 
 114 app tests and 2 UI tests pass.
 
@@ -187,7 +189,7 @@ that's on the roadmap.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
   protocol without touching the network.
 - **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
-  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 14
+  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 18
   (see [This branch](#this-branch-dev)).
 
 ## Repository layout
@@ -233,7 +235,7 @@ that's on the roadmap.
   is ever shown or used. Since NU6.3, these payments land in the Ironwood shielded pool.
 - **Fees:** standard ZIP-317 fees of 5,000 zatoshis per action: 0.0001 ZEC for a one-memo
   message (two actions) and about 0.00025 ZEC for a chat's first message (four memos and
-  the change). From block 3,590,000 (around November 19 to 20, 2026), the network's
+  the change). From block 3,590,000 (November 19, 2026), the network's
   standard fee is 1,000 zatoshis per action (ZIP 2009). Zignal keeps paying 5,000 until
   its Zcash SDK moves to the librustzcash release with the new fee: still valid, just
   five times more than needed. Fees are public and reveal roughly how many memos a
@@ -545,7 +547,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
-- **Remaining RustSec advisories** in the SDK's dependencies (November 14, 2026):
+- **Remaining RustSec advisories** in the SDK's dependencies (checked November 17, 2026):
   - through arti (the Tor client, off by default), with no compatible fix yet: `rsa`
     (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
     only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; used for SSH key
@@ -556,7 +558,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
     releases of librustzcash and arti;
   - `rustix` 1.1.4 (RUSTSEC-2026-0486, informational): unsound when an extended-attribute
     call gets an empty buffer. It comes in through `tempfile`; Zignal makes no such call.
-    Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet.
+    Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet;
+  - `chrono` and `humantime` are marked unmaintained (RUSTSEC-2026-0543 and
+    RUSTSEC-2026-0542, informational): no known vulnerability.
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
@@ -749,6 +753,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-17 | `8a8fac4` | `dev`: README screenshots of the invite screens |
 | 2026-11-17 | `3f731ac` | `dev`: Zignal's copy cleared at lock and unlock; a slow send check says so; README corrections |
 | 2026-11-17 | `96bc7ea` | `dev`: README screenshot of the warning before a chat starts over |
+| 2026-11-18 | `e40bd43` | `dev`: an app icon; README: private TestFlight first, post-quantum protection for every message next |
 
 ## Credits
 

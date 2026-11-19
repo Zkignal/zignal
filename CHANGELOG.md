@@ -9,16 +9,23 @@ its entry here in the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-19
+
+### Documentation
+- README: `dev`'s tests through November 18, the day of the fee change at block
+  3,590,000 (November 19), the dependency advisories as of November 17 (`chrono` and
+  `humantime` unmaintained), and the app icon's commit.
+
 ## 2026-11-18
 
 ### Added
 - **An app icon:** two hands forming a Z around a globe, white on black, 1024 x 1024
   with only its pixels (no EXIF, colour profile or other hidden data). TestFlight and
-  the App Store need one.
+  the App Store need one. (`e40bd43`)
 
 ### Documentation
 - README: TestFlight under Try it (private testing by invitation first); post-quantum
-  protection for every message moved up the roadmap.
+  protection for every message moved up the roadmap. (`e40bd43`)
 
 ## 2026-11-17
 
