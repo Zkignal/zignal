@@ -153,6 +153,9 @@ struct AddFundsView: View {
                             Clipboard.copy(address)
                             copied = true
                         }
+                        Button("Share address", systemImage: "square.and.arrow.up") {
+                            ShareSheet.present(address)
+                        }
                     } else if let errorText {
                         Text(errorText).foregroundStyle(.red)
                     } else {

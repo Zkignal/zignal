@@ -249,7 +249,7 @@ private struct MessageBubble: View {
             VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 4) {
                 // Text(String) renders verbatim: no Markdown, so received text can't inject links.
                 // No text selection: its Copy goes to the general pasteboard (other devices, no
-                // expiry). This Copy stays on this device and clears after 5 minutes.
+                // expiry). This Copy stays on this device and clears after 60 seconds.
                 Text(message.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

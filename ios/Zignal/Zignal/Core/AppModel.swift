@@ -267,8 +267,8 @@ final class AppModel {
     }
 
     /// Locks the open profile. The Lock button also removes Zignal's copy from the pasteboard;
-    /// going to the background keeps it (until it expires after five minutes, or the next unlock),
-    /// so an invite or address copied here can still be pasted into another app.
+    /// going to the background keeps it (until it expires after 60 seconds, or the next unlock
+    /// removes it), so an invite or address copied here can still be pasted into another app.
     func lock(clearingClipboard: Bool = true) {
         if clearingClipboard { Clipboard.clearOurCopy() }
         guard case .unlocked(let session) = phase else { return }

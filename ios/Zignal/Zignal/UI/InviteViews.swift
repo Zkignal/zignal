@@ -35,6 +35,9 @@ struct ShowInviteView: View {
                             Clipboard.copy(code)
                             copied = true
                         }
+                        Button("Share invite", systemImage: "square.and.arrow.up") {
+                            ShareSheet.present(code)
+                        }
                     } else if let errorText {
                         Text(errorText).foregroundStyle(.red)
                     } else {
@@ -292,29 +295,81 @@ struct InviteScanner: UIViewControllerRepresentable {
 }
 
 /// Copies to this phone only: never to other devices through Universal Clipboard. The copy
-/// expires after five minutes; the Lock button and the next unlock remove it sooner (see
-/// `clearOurCopy`). Going to the background keeps it, so it can be pasted into another app.
-/// Stored as UTF-8 plain text, the type that the system Paste button and other apps read as text.
+/// expires after 60 seconds: iOS removes it then, whatever else happens. The Lock button removes
+/// it sooner (see `clearOurCopy`). The next unlock tries to as well, also after the app was
+/// ended, but an iPhone test (November 19) showed it can miss after a trip to the Home Screen;
+/// the cause isn't known yet, so the expiry is the limit to rely on. Going to the background
+/// keeps the copy, so it can be pasted into another app. Stored as UTF-8 plain text, the type
+/// that the system Paste button and other apps read as text.
 @MainActor
 enum Clipboard {
+    /// How long a copy stays on the pasteboard when nothing removes it sooner.
+    static let lifetime: TimeInterval = 60
+    /// Where the mark is kept. Tests use their own service.
+    static var markService = Keychain.appService
     /// The pasteboard's change count right after Zignal's last copy. While it's unchanged, what's
-    /// on the pasteboard is still Zignal's copy.
+    /// on the pasteboard is still Zignal's copy. Also kept in the Keychain (`pasteboardMark`),
+    /// because this is gone once the app is ended.
     private static var ourCopy: Int?
 
     static func copy(_ text: String) {
+        let expires = Date().addingTimeInterval(lifetime)
         UIPasteboard.general.setItems(
             [[UTType.utf8PlainText.identifier: text]],
-            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(300)]
+            options: [.localOnly: true, .expirationDate: expires]
         )
-        ourCopy = UIPasteboard.general.changeCount
+        let count = UIPasteboard.general.changeCount
+        ourCopy = count
+        // Only the count and the expiry time, never what was copied.
+        let mark = "\(count) \(Int(expires.timeIntervalSince1970))"
+        try? Keychain.write(Data(mark.utf8), to: .pasteboardMark, service: markService)
     }
 
     /// Removes Zignal's copy if it's still on the pasteboard, so a message, an invite or an
     /// address copied in one profile can't be pasted after a lock (into the other profile, or
     /// into another app). Something copied since, in Zignal or elsewhere, is left alone.
     static func clearOurCopy() {
-        defer { Self.ourCopy = nil }
-        guard let count = Self.ourCopy, UIPasteboard.general.changeCount == count else { return }
+        let count = ourCopy ?? savedMark()
+        ourCopy = nil
+        try? Keychain.delete(.pasteboardMark, service: markService)
+        guard let count, UIPasteboard.general.changeCount == count else { return }
         UIPasteboard.general.items = []
+    }
+
+    /// The change count kept by an earlier run of the app. Nil once the copy has expired: iOS
+    /// removed it then, and a later copy elsewhere may have the same count after a restart.
+    private static func savedMark() -> Int? {
+        guard let data = try? Keychain.read(.pasteboardMark, service: markService) else { return nil }
+        let parts = String(decoding: data, as: UTF8.self).split(separator: " ")
+        guard parts.count == 2, let count = Int(parts[0]), let expires = Int(parts[1]),
+              Date().timeIntervalSince1970 < TimeInterval(expires) else { return nil }
+        return count
+    }
+
+    /// Tests only: forgets the in-memory mark, as ending the app does.
+    static func forgetInMemoryMark() {
+        ourCopy = nil
+    }
+}
+
+/// The system share sheet for an invite or an address, so it goes straight to the app the user
+/// picks (Messages, Signal, AirDrop) without passing through the pasteboard. Its own Copy action
+/// is left out: that would put the text on the general pasteboard, with no expiry.
+@MainActor
+enum ShareSheet {
+    static let excluded: [UIActivity.ActivityType] = [
+        .copyToPasteboard, .addToReadingList, .assignToContact, .print, .saveToCameraRoll,
+    ]
+
+    static func present(_ text: String) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+            var top = scene.keyWindow?.rootViewController else { return }
+        while let next = top.presentedViewController { top = next }
+        let sheet = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        sheet.excludedActivityTypes = excluded
+        sheet.popoverPresentationController?.sourceView = top.view
+        top.present(sheet, animated: true)
     }
 }

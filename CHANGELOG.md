@@ -11,6 +11,20 @@ its entry here in the same commit.
 
 ## 2026-11-19
 
+### Security
+- **Copies expire after 60 seconds, the next unlock can find Zignal's copy after the app
+  was ended, and invites and addresses can be shared without the pasteboard.** Copies expired
+  after 5 minutes. The mark that tells the next unlock which pasteboard item is Zignal's own
+  lived only in memory, so if the app was ended in the background (by iOS or by swiping it
+  away) the next unlock, with any PIN, left the copy there for the other profile to paste.
+  The mark is now also kept in the Keychain (this device only): the pasteboard's change count
+  and the expiry time, never the text, removed at the next unlock or lock. **Known gap:** in
+  an iPhone test on November 19, the next unlock still left the copy after a trip to the Home
+  Screen (the cause isn't known yet); the Lock button removes it, and iOS removes it after 60
+  seconds. Share invite and Share address send an invite or an address straight to the app
+  picked, without the pasteboard; the share sheet has no Copy. Found by two November 18
+  reviews. 3 new tests.
+
 ### Fixed
 - **Messages and invites run on the chain's clock, not the phone's date.** The sending
   phone picked each message's daily conversation tag from its own clock, while the contact
@@ -21,7 +35,7 @@ its entry here in the same commit.
   block the wallet has scanned; until the wallet has nearly caught up with the network,
   sending and making an invite wait ("still catching up"). A prekey stamped more than a day
   ahead is replaced. The Zcash SDK gets `latestScannedBlock()` to read that time from the
-  wallet database. Found by a November 18 review. 3 new app tests, 1 new core test.
+  wallet database. Found by a November 18 review. 3 new app tests, 1 new core test. (`319bc3e`)
 
 ### Documentation
 - README: `dev`'s tests through November 18, the day of the fee change at block

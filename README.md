@@ -29,7 +29,8 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | |
+| Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | |
+| Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | `319bc3e` |
 | Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
 | Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
@@ -68,7 +69,7 @@ Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
 - the app icon, then syncing and messages both ways between the real and decoy profiles
   on one iPhone (November 18).
 
-117 app tests and 2 UI tests pass.
+120 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -358,11 +359,16 @@ that's on the roadmap.
 - Third-party keyboards are blocked, and the message box has autocorrect off.
 - Received text is shown verbatim, never rendered as Markdown or links.
 - Copied invites, addresses and message text stay on this phone (no Universal Clipboard)
-  and expire after five minutes. The Lock button and every unlock remove Zignal's copy
-  sooner, unless something else was copied since, so a copy made in one profile can't be
-  pasted into the other. Going to the background keeps it, so an invite can be pasted into
-  another app; until it expires, any app can read it then. Message text and the wallet
-  address can't be selected; copy them with Copy (touch and hold a message).
+  and expire after 60 seconds: iOS removes them then. The Lock button removes Zignal's copy
+  sooner, unless something else was copied since. The next unlock tries to as well, so a
+  copy made in one profile isn't left for the other, also after the app was ended: the
+  Keychain keeps the pasteboard's change count and the expiry time (never the text) until
+  the next unlock or lock. On an iPhone it can still miss after a trip to the Home Screen
+  (see [Security notes](#security-notes-and-known-limitations)). Going to the background
+  keeps the copy, so an invite or an address can be pasted into another app; until it
+  expires, any app can read it then. Share invite and Share address send it straight to the
+  app you pick, without the pasteboard (the share sheet has no Copy). Message text and the
+  wallet address can't be selected; copy them with Copy (touch and hold a message).
 - The recovery words appear only once the app knows the screen isn't being recorded,
   mirrored or shared, so a recording that's already running doesn't catch them.
 
@@ -484,7 +490,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 117 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 120 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -509,6 +515,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     takes long); and reading a chat's first message before the rest;
   - the chain's time as the clock for sending, invites and retries, and prekeys stamped by
     a phone's date far ahead being replaced;
+  - the pasteboard mark that outlives the app being ended (a count and a time, never the
+    text, and an expired one ignored), the 60-second expiry, and a share sheet without Copy;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -552,6 +560,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   written still carries the conversation tag of the day it was written, so the contact's
   phone doesn't read it, while this phone shows it delivered. Until the fix (see Roadmap),
   write such a message again instead.
+- **Zignal's copy after a trip to the Home Screen:** in an iPhone test on November 19, an
+  invite copied in one profile could still be pasted in the other after going to the Home
+  Screen, coming back and unlocking with the other PIN: the next unlock didn't remove it.
+  The cause isn't known yet (see Roadmap). Until it's fixed, iOS removes every copy after 60
+  seconds, and the Lock button removes Zignal's copy at once: press Lock before handing the
+  phone over, or wait a minute after copying.
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
@@ -701,7 +715,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   sent, so the contact reads it; an unused invite's ID that expires with its keys and
   accepts only the keys it carried; random prekey IDs instead of counters; and a random
   delay before fetches over Tor (or blocks over Tor too), so a fetch can't be timed to a
-  sync. Removing Zignal's copy from the pasteboard at lock and unlock is done on `dev`.
+  sync. Removing Zignal's copy from the pasteboard at lock is done on `dev`; at unlock it
+  can still miss on an iPhone after a trip to the Home Screen, and the cause is being
+  looked into (see Security notes).
 - **Lower fees:** the Zcash SDK on the librustzcash release with the ZIP 2009 fee (1,000
   zatoshis per action), with the app's fee texts in the same change.
 - **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
@@ -763,6 +779,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-17 | `96bc7ea` | `dev`: README screenshot of the warning before a chat starts over |
 | 2026-11-18 | `e40bd43` | `dev`: an app icon; README: private TestFlight first, post-quantum protection for every message next |
 | 2026-11-19 | `64880e5` | `dev`: README: tests through November 18 and corrections |
+| 2026-11-19 | `319bc3e` | `dev`: messages, invites and prekeys on the chain's clock |
 
 ## Credits
 

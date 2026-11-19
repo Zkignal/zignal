@@ -31,21 +31,76 @@ private func withTestSecrets(useSecureEnclave: Bool = SecureEnclave.isAvailable,
 @Suite(.serialized)
 struct ClipboardTests {
     @Test @MainActor func copiedInviteReadsBackAsText() {
-        Clipboard.copy("zignal:test-invite")
-        #expect(UIPasteboard.general.hasStrings)
-        #expect(UIPasteboard.general.string == "zignal:test-invite")
+        withTestMark { _ in
+            Clipboard.copy("zignal:test-invite")
+            #expect(UIPasteboard.general.hasStrings)
+            #expect(UIPasteboard.general.string == "zignal:test-invite")
+        }
     }
 
     @Test @MainActor func lockingRemovesOnlyZignalsOwnCopy() {
-        Clipboard.copy("zignal:test-invite")
-        Clipboard.clearOurCopy()
-        #expect(!UIPasteboard.general.hasStrings)
-        // Something copied after Zignal's copy, here or in another app, stays.
-        Clipboard.copy("zignal:test-invite")
-        UIPasteboard.general.string = "copied elsewhere"
-        Clipboard.clearOurCopy()
-        #expect(UIPasteboard.general.string == "copied elsewhere")
-        UIPasteboard.general.items = []
+        withTestMark { _ in
+            Clipboard.copy("zignal:test-invite")
+            Clipboard.clearOurCopy()
+            #expect(!UIPasteboard.general.hasStrings)
+            // Something copied after Zignal's copy, here or in another app, stays.
+            Clipboard.copy("zignal:test-invite")
+            UIPasteboard.general.string = "copied elsewhere"
+            Clipboard.clearOurCopy()
+            #expect(UIPasteboard.general.string == "copied elsewhere")
+        }
+    }
+
+    /// Runs `body` with the pasteboard mark in a Keychain service of its own.
+    @MainActor private func withTestMark(_ body: (String) throws -> Void) rethrows {
+        let service = "zignal-tests-\(UUID().uuidString)"
+        Clipboard.markService = service
+        defer {
+            try? Keychain.delete(.pasteboardMark, service: service)
+            Clipboard.markService = Keychain.appService
+            UIPasteboard.general.items = []
+        }
+        try body(service)
+    }
+
+    @Test @MainActor func theNextUnlockRemovesZignalsCopyEvenAfterTheAppWasEnded() throws {
+        try withTestMark { (service: String) throws in
+            Clipboard.copy("zignal:test-invite")
+            #expect(try Keychain.read(.pasteboardMark, service: service) != nil)
+            Clipboard.forgetInMemoryMark() // the app was ended in the background
+            Clipboard.clearOurCopy()
+            #expect(!UIPasteboard.general.hasStrings)
+            #expect(try Keychain.read(.pasteboardMark, service: service) == nil)
+            // Something copied since, here or in another app, still stays.
+            Clipboard.copy("zignal:test-invite")
+            UIPasteboard.general.string = "copied elsewhere"
+            Clipboard.forgetInMemoryMark()
+            Clipboard.clearOurCopy()
+            #expect(UIPasteboard.general.string == "copied elsewhere")
+        }
+    }
+
+    @Test @MainActor func theMarkHoldsOnlyACountAndATimeAndIgnoresAnExpiredCopy() throws {
+        try withTestMark { service in
+            Clipboard.copy("zignal:secret-text")
+            let mark = String(decoding: try #require(try Keychain.read(.pasteboardMark, service: service)),
+                              as: UTF8.self)
+            #expect(!mark.contains("secret"))
+            #expect(mark.split(separator: " ").count == 2)
+            #expect(Clipboard.lifetime == 60)
+            // A mark whose copy already expired is ignored: iOS removed that copy, and after a
+            // restart the same count may belong to something else.
+            let count = UIPasteboard.general.changeCount
+            let expired = "\(count) \(Int(Date().timeIntervalSince1970) - 1)"
+            try Keychain.write(Data(expired.utf8), to: .pasteboardMark, service: service)
+            Clipboard.forgetInMemoryMark()
+            Clipboard.clearOurCopy()
+            #expect(UIPasteboard.general.string == "zignal:secret-text")
+        }
+    }
+
+    @Test @MainActor func theShareSheetHasNoCopyAction() {
+        #expect(ShareSheet.excluded.contains(.copyToPasteboard))
     }
 
     @Test func prepareErrorNamesTheMinimum() {

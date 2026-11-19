@@ -23,6 +23,9 @@ enum Keychain {
         case sealedVault
         /// The device key, sealed by the Secure Enclave key.
         case sealedFileKey
+        /// The pasteboard's change count after Zignal's last copy, and when that copy expires,
+        /// so the next unlock can remove it even after the app was ended (see `Clipboard`).
+        case pasteboardMark
     }
 
     /// The app's own items. Tests use other services, so they never touch these.
