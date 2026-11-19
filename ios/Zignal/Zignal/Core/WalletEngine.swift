@@ -161,6 +161,8 @@ final class WalletEngine {
     /// transaction whose memos the wallet hasn't fetched yet (it comes back on a later call).
     func snapshot(skipping processed: Set<Data>) async throws -> Snapshot {
         guard let sync = synchronizer, let account else { return Snapshot() }
+        // For a transaction not in a block yet: the chain's time, never the phone's.
+        let chainNow = await chainTime()
         var snapshot = Snapshot()
         snapshot.complete = phase == .ready
         // The SDK lists newest first. Messages are read oldest first, as they were sent.
@@ -173,10 +175,20 @@ final class WalletEngine {
             guard !tx.isSentTransaction, !processed.contains(tx.rawID) else { continue }
             let outputs = await sync.getTransactionOutputs(for: tx).map(Self.reduce)
             guard let memos = IncomingMemos.extract(from: outputs) else { continue }
-            let time = UInt64(max(0, tx.blockTime ?? Date().timeIntervalSince1970))
+            // Not in a block yet and the chain's time unknown: it comes back on a later call.
+            guard let time = tx.blockTime.map({ UInt64(max(0, $0)) }) ?? chainNow else { continue }
             snapshot.incoming.append((tx.rawID, time, memos))
         }
         return snapshot
+    }
+
+    /// The protocol clock, in Unix seconds: the header time of the newest block this wallet has
+    /// scanned, once that block is close to the chain tip the server reports (`ChainClock`).
+    /// Nil before that. Message tags, prekeys and retries use it instead of the phone's date.
+    func chainTime() async -> UInt64? {
+        guard let sync = synchronizer, let block = try? await sync.latestScannedBlock() else { return nil }
+        return ChainClock.time(scannedHeight: block.height, scannedTime: block.time,
+                               tipHeight: sync.latestState.latestBlockHeight)
     }
 
     /// Our own transactions that are mined or still waiting to be mined (expired ones are left

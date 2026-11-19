@@ -11,10 +11,22 @@ its entry here in the same commit.
 
 ## 2026-11-19
 
+### Fixed
+- **Messages and invites run on the chain's clock, not the phone's date.** The sending
+  phone picked each message's daily conversation tag from its own clock, while the contact
+  reads it at its block time, so a phone whose date was 2 or more days off sent messages
+  nobody could read, shown as delivered; prekeys (and so invites) were stamped with the
+  phone's date too, so one open with the date weeks ahead could stop every invite already
+  handed out. Messages, invites, prekey rotation and retries now use the time of the newest
+  block the wallet has scanned; until the wallet has nearly caught up with the network,
+  sending and making an invite wait ("still catching up"). A prekey stamped more than a day
+  ahead is replaced. The Zcash SDK gets `latestScannedBlock()` to read that time from the
+  wallet database. Found by a November 18 review. 3 new app tests, 1 new core test.
+
 ### Documentation
 - README: `dev`'s tests through November 18, the day of the fee change at block
   3,590,000 (November 19), the dependency advisories as of November 17 (`chrono` and
-  `humantime` unmaintained), and the app icon's commit.
+  `humantime` unmaintained), and the app icon's commit. (`64880e5`)
 
 ## 2026-11-18
 

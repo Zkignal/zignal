@@ -29,6 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | |
 | Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
 | Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
 | Nov 17 | **Unlocking no longer earns wrong-PIN tries back; 2 hours with no wrong PIN do.** 5 wrong PINs are free, then the wait doubles from 30 seconds to 1 hour. A PIN that opens a profile, any of the three, takes back only its own count; after 2 hours with no wrong PIN, the count starts over, and the lock screen says so under the countdown. A counter that can't be read counts as no free tries left. | Every unlock reset the count, so someone who knew the duress PIN could keep guessing, unlocking the decoy between tries, and never reach the wait (Zignal's own pressure test). A counter that couldn't be read started over with every free try. | `e62efe0` |
@@ -67,7 +68,7 @@ Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
 - the app icon, then syncing and messages both ways between the real and decoy profiles
   on one iPhone (November 18).
 
-114 app tests and 2 UI tests pass.
+117 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -220,8 +221,9 @@ that's on the roadmap.
 - **Contacts:** single-use invites by QR code or paste. Each contact gets its own receive
   address. Contacts verify each other with a 60-digit safety number. The core also supports
   cold contact requests that the recipient must accept; the app doesn't offer them yet.
-- **Conversation lookup:** a tag that rotates daily (each UTC day) instead of any sender
-  identifier. It sits in the memo's readable header (see the security notes).
+- **Conversation lookup:** a tag that rotates daily (each UTC day, by the chain's block
+  time) instead of any sender identifier. It sits in the memo's readable header (see the
+  security notes).
 - **Primitives:** X25519, Ed25519, ML-KEM-768, ChaCha20-Poly1305, HKDF-SHA256, Argon2id,
   all from audited RustCrypto and dalek crates. No custom primitives.
 
@@ -240,6 +242,10 @@ that's on the roadmap.
   its Zcash SDK moves to the librustzcash release with the new fee: still valid, just
   five times more than needed. Fees are public and reveal roughly how many memos a
   transaction carried.
+- **Clock:** messages, invites and prekeys use the time of the newest block the wallet has
+  scanned, not the phone's date, so a phone with the wrong date still sends messages its
+  contacts can read. Until the wallet has nearly caught up with the network, sending a message
+  or making an invite waits for it.
 - **Receiving:** after each sync, new transactions are read in chain order, each at its own
   block time, so a message read days later still finds its chat.
 - **Delivered** means the transaction is in a block. There are no read receipts, which would
@@ -478,7 +484,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 114 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 117 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -501,6 +507,8 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
     transaction and shown as "Checking" until the wallet has looked (saying so when that
     takes long); and reading a chat's first message before the rest;
+  - the chain's time as the clock for sending, invites and retries, and prekeys stamped by
+    a phone's date far ahead being replaced;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -754,6 +762,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-17 | `3f731ac` | `dev`: Zignal's copy cleared at lock and unlock; a slow send check says so; README corrections |
 | 2026-11-17 | `96bc7ea` | `dev`: README screenshot of the warning before a chat starts over |
 | 2026-11-18 | `e40bd43` | `dev`: an app icon; README: private TestFlight first, post-quantum protection for every message next |
+| 2026-11-19 | `64880e5` | `dev`: README: tests through November 18 and corrections |
 
 ## Credits
 

@@ -210,8 +210,15 @@ final class ProfileSession {
             errorText = ZignalError.walletNotReady.errorDescription
             return
         }
+        // The day in the message's tag comes from the chain, not the phone's date: the contact
+        // reads it at its block time (see `ChainClock`).
+        guard let now = await wallet.chainTime() else {
+            errorText = ZignalError.walletCatchingUp.errorDescription
+            return
+        }
+        guard !isClosed else { return }
         do {
-            let out = try inbox.sendText(peer: peer, text: trimmed, now: unixNow())
+            let out = try inbox.sendText(peer: peer, text: trimmed, now: now)
             var message = ChatMessage.outgoing(trimmed, to: peer, memos: out.memos.count)
             message.status = .sending
             message.pendingMemos = out.memos
@@ -359,7 +366,13 @@ final class ProfileSession {
                 guard !isClosed else { return }
                 var changed = false
                 let incoming = snapshot.incoming
-                let now = unixNow()
+                // The chain's time (0 while unknown, which keeps unread transactions waiting).
+                let chainNow = await wallet.chainTime()
+                guard !isClosed else { return }
+                let now = chainNow ?? 0
+                // Weekly prekey rotation runs on the chain's time too, so a wrong date on the
+                // phone can't stamp prekeys in the past or the future.
+                if let chainNow, try inbox.rotatePrekeysIfDue(now: chainNow) { changed = true }
                 // A chat's first message before anything else, so a second message sent right
                 // after it is readable in the same pass, whatever order the wallet lists them in.
                 let order = IncomingReading.order(incoming.map { $0.memos })
@@ -443,6 +456,11 @@ final class ProfileSession {
     /// carries a fresh address that only this contact will use.
     func makeInvite() async throws -> String {
         guard !isClosed, let wallet, wallet.canTransact else { throw ZignalError.walletNotReady }
+        // The invite carries this profile's current prekeys, which must be stamped with the
+        // chain's time: the contact's first message is checked against its block time.
+        guard let now = await wallet.chainTime() else { throw ZignalError.walletCatchingUp }
+        guard !isClosed else { throw CancellationError() }
+        _ = try inbox.rotatePrekeysIfDue(now: now)
         let address = try await wallet.newAddress()
         guard !isClosed else { throw CancellationError() }
         let invite = try inbox.createInvite(myAddress: Data(address.utf8))
@@ -683,7 +701,8 @@ private struct LoadedProfile: @unchecked Sendable {
             inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
             demo = nil
         }
-        _ = try inbox.rotatePrekeysIfDue(now: now)
+        // Prekeys rotate once the wallet knows the chain's time (`refreshFromWallet`,
+        // `makeInvite`), not here on the phone's date.
         // Saving on every open re-seals all profile files, whichever profile was opened.
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)

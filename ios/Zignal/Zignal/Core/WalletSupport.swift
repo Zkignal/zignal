@@ -345,13 +345,37 @@ enum IncomingReading {
 
     /// Whether a transaction is finished with, so it isn't read again. One with zkw memos that
     /// couldn't be read is tried again for `retryWindow` after it was sent (`sentAt`, its block
-    /// time): the message that opens its chat may still be on its way.
+    /// time): the message that opens its chat may still be on its way. `now` is the chain's time
+    /// (`ChainClock`), never the phone's; 0 while it isn't known, which keeps trying.
     static func isDone(read: Bool, complete: Bool, memos: [Data], sentAt: UInt64, now: UInt64) -> Bool {
         if read { return true }
         // Until the wallet has scanned every block, anything may still be missing.
         guard complete else { return false }
         guard memos.contains(where: ZkwMemo.isEnvelope) else { return true }
         return now > sentAt && now - sentAt > retryWindow
+    }
+}
+
+/// The clock Zignal's protocol runs on: the time in the chain's own blocks, not the phone's date.
+///
+/// The contact reads each message at its block time, and picks its chat by a tag that changes
+/// every UTC day. If the sender picked the day from the phone's clock, a phone whose date was 2
+/// or more days off sent messages nobody could read, shown as delivered. Prekeys (and so
+/// invites) were stamped with the phone's date too, so a wrong date made invites expire early,
+/// or live too long. Now both sides use block times from the same chain.
+enum ChainClock {
+    /// How far (in blocks) the newest scanned block may be behind the chain tip the server
+    /// reports and still count as "now": 2 hours at 25 seconds a block, 6 at 75. The contact
+    /// accepts the day before and after, so anything under a day would still be read.
+    static let maxLag = 288
+
+    /// The chain's time in Unix seconds, from the newest block the wallet has scanned: nil while
+    /// that block is more than `maxLag` blocks behind the tip (the wallet is still catching up),
+    /// or when either height or the time is unknown.
+    static func time(scannedHeight: Int, scannedTime: Int, tipHeight: Int) -> UInt64? {
+        guard scannedHeight > 0, tipHeight > 0, scannedTime > 0,
+              tipHeight - scannedHeight <= maxLag else { return nil }
+        return UInt64(scannedTime)
     }
 }
 

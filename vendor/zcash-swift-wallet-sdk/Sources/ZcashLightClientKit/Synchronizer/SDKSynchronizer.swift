@@ -668,6 +668,16 @@ public class SDKSynchronizer: Synchronizer {
         try await blockProcessor.latestHeight(mode: await sdkFlags.ifTor(.torInGroup("SDKSynchronizer.latestHeight")))
     }
 
+    /// Zignal patch: the height and header time (Unix seconds) of the highest block this wallet
+    /// has scanned, read from the wallet database without asking the server. Nil before any
+    /// block is scanned. Zignal uses it as its clock instead of the phone's date.
+    public func latestScannedBlock() async throws -> (height: BlockHeight, time: Int)? {
+        guard let height = try await initializer.rustBackend.maxScannedHeight(),
+              let dao = transactionRepository as? TransactionSQLDAO,
+              let block = try await dao.blockForHeight(height) else { return nil }
+        return (height, block.time)
+    }
+
     public func refreshUTXOs(address: TransparentAddress, from height: BlockHeight) async throws -> RefreshedUTXOs {
         try throwIfUnprepared()
         return try await blockProcessor.refreshUTXOs(tAddress: address, startHeight: height)

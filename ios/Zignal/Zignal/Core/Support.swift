@@ -11,6 +11,7 @@ enum ZignalError: LocalizedError {
     case messageTooLong
     case invalidRecoveryPhrase
     case walletNotReady
+    case walletCatchingUp
     case walletMismatch
     case notEnoughFunds
     case notEnoughToPrepare(minimum: Int64)
@@ -30,6 +31,7 @@ enum ZignalError: LocalizedError {
         case .messageTooLong: "This message is too long. Split it into shorter messages."
         case .invalidRecoveryPhrase: "That isn't a valid 24-word recovery phrase. Check each word."
         case .walletNotReady: "The wallet is still starting. Try again in a moment."
+        case .walletCatchingUp: "The wallet is still catching up with the network. Try again once it says Up to date."
         case .walletMismatch: "The wallet on this phone doesn't belong to this profile."
         case .notEnoughFunds: "Not enough ZEC in this wallet yet. Add funds and wait for them to confirm."
         case .notEnoughToPrepare(let minimum):

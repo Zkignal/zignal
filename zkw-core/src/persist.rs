@@ -18,6 +18,9 @@ use crate::identity::{Identity, PqPrekey, PrekeyStore, SignedPrekey, SPK_LIFETIM
 use crate::primitives as p;
 use crate::session::{ContactRequest, Inbox, Session};
 
+/// How far ahead of `now` a prekey's stamp may be before it counts as made by a wrong clock.
+pub const MAX_FUTURE_STAMP_S: u64 = 24 * 3600;
+
 pub const STATE_VERSION: u64 = 1;
 
 fn bad() -> Error {
@@ -187,9 +190,11 @@ impl Inbox {
 
     /// Rotate signed prekeys once they are a week old. Old ones stay valid through
     /// the grace window, so invites already handed out keep working. Returns true if rotated.
+    /// A current prekey stamped more than a day after `now` was made while the device's clock
+    /// was wrong; it is replaced too, or invites made from it would outlive their lifetime.
     pub fn rotate_prekeys_if_due(&mut self, now: u64) -> bool {
         let created = self.prekeys.spks.get(&self.prekeys.current_spk).map(|k| k.created).unwrap_or(0);
-        if now.saturating_sub(created) >= SPK_LIFETIME_S {
+        if created > now.saturating_add(MAX_FUTURE_STAMP_S) || now.saturating_sub(created) >= SPK_LIFETIME_S {
             self.prekeys.rotate(now);
             true
         } else {

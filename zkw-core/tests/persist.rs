@@ -162,3 +162,25 @@ fn sealed_state_and_profile_keys() {
     tampered[n - 1] ^= 1;
     assert!(open_state(&key, &tampered).is_err(), "tampered");
 }
+
+#[test]
+fn prekeys_stamped_by_a_clock_far_ahead_are_replaced() {
+    const DAY: u64 = 86_400;
+    // Made while the phone's date was 60 days ahead.
+    let mut bob = Inbox::new(id(b'B'), NOW + 60 * DAY);
+    assert!(bob.rotate_prekeys_if_due(NOW), "a prekey stamped in the future is replaced");
+    assert!(!bob.rotate_prekeys_if_due(NOW), "and the new one is current");
+    assert!(!bob.rotate_prekeys_if_due(NOW + 6 * DAY));
+    assert!(bob.rotate_prekeys_if_due(NOW + 7 * DAY), "a week later it rotates as usual");
+    // Up to a day ahead is clock skew, not a wrong clock.
+    let mut carol = Inbox::new(id(b'C'), NOW + DAY);
+    assert!(!carol.rotate_prekeys_if_due(NOW));
+    assert!(Inbox::new(id(b'D'), NOW + DAY + 1).rotate_prekeys_if_due(NOW));
+    // An invite made after the rotation is answered at the chain's time.
+    let mut bob = Inbox::new(id(b'B'), NOW + 60 * DAY);
+    assert!(bob.rotate_prekeys_if_due(NOW));
+    let inv = bob.create_invite(B_ADDR);
+    let mut alice = Inbox::new(id(b'A'), NOW);
+    let init = alice.start_from_invite(&inv, A_ADDR, "hi").unwrap();
+    assert_eq!(texts(deliver(&mut bob, &init, NOW + 3600)), ["hi"]);
+}

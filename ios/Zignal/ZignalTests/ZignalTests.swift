@@ -1140,6 +1140,52 @@ struct IncomingReadingTests {
                                        now: sent + IncomingReading.retryWindow + 1))
         // A block time a little ahead of the phone's clock doesn't count as old.
         #expect(!IncomingReading.isDone(read: false, complete: true, memos: zkw, sentAt: sent + 600, now: sent))
+        // While the chain's time is unknown (0), nothing unread is set aside.
+        #expect(!IncomingReading.isDone(read: false, complete: true, memos: zkw, sentAt: sent, now: 0))
+    }
+}
+
+struct ChainClockTests {
+    @Test func usesTheNewestScannedBlockOnlyWhenItIsNearTheTip() {
+        let time = 1_790_000_000
+        #expect(ChainClock.time(scannedHeight: 3_600_000, scannedTime: time, tipHeight: 3_600_000) == UInt64(time))
+        #expect(ChainClock.time(scannedHeight: 3_600_000 - ChainClock.maxLag, scannedTime: time,
+                                tipHeight: 3_600_000) == UInt64(time))
+        // Still catching up: no clock yet, so nothing is sent on a stale day.
+        #expect(ChainClock.time(scannedHeight: 3_600_000 - ChainClock.maxLag - 1, scannedTime: time,
+                                tipHeight: 3_600_000) == nil)
+        // Nothing scanned, no tip from the server, or no time: unknown.
+        #expect(ChainClock.time(scannedHeight: 0, scannedTime: time, tipHeight: 3_600_000) == nil)
+        #expect(ChainClock.time(scannedHeight: 3_600_000, scannedTime: time, tipHeight: 0) == nil)
+        #expect(ChainClock.time(scannedHeight: 3_600_000, scannedTime: 0, tipHeight: 3_600_000) == nil)
+        // A tip reported a moment ago, below a block scanned since: still now.
+        #expect(ChainClock.time(scannedHeight: 3_600_005, scannedTime: time, tipHeight: 3_600_000) == UInt64(time))
+    }
+
+    @Test func messagesSentOnTheChainsDayAreReadWhateverThePhoneSays() throws {
+        let chain: UInt64 = 1_790_000_000
+        let alice = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let bob = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let invite = try bob.createInvite(myAddress: Data("utest1bob".utf8))
+        let first = try alice.startFromInvite(invite: invite, myAddress: Data("utest1alice".utf8), firstText: "hi")
+        for memo in first.memos { _ = try bob.receive(memo: memo, now: chain) }
+        let bobId = try bob.myId()
+        // A phone 3 days behind used to stamp this with its own day: Bob drops it.
+        let wrongDay = try alice.sendText(peer: bobId, text: "lost", now: chain - 3 * 86_400)
+        #expect(try wrongDay.memos.compactMap { try bob.receive(memo: $0, now: chain + 60) }.isEmpty)
+        // Stamped with the chain's time, it is read at its block time.
+        let chainDay = try alice.sendText(peer: bobId, text: "read", now: chain)
+        #expect(try chainDay.memos.compactMap { try bob.receive(memo: $0, now: chain + 60) }.count == 1)
+    }
+
+    @Test func prekeysStampedByAPhoneDateFarAheadAreReplaced() throws {
+        let chain: UInt64 = 1_790_000_000
+        let ahead = try ZkwInbox(seed: secureRandom(32), now: chain + 60 * 86_400)
+        #expect(try ahead.rotatePrekeysIfDue(now: chain))
+        #expect(try !ahead.rotatePrekeysIfDue(now: chain))
+        // Up to a day ahead is ordinary clock skew.
+        let skewed = try ZkwInbox(seed: secureRandom(32), now: chain + 86_400 - 1)
+        #expect(try !skewed.rotatePrekeysIfDue(now: chain))
     }
 }
 

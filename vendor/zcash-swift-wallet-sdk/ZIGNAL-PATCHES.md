@@ -202,3 +202,18 @@ to November 12 still start at 3,390,000 (safe, slower).
 Files: `Sources/ZcashLightClientKit/Resources/checkpoints/mainnet/3565000.json` (new, sha256
 `a988108af7bf2d9ae92a26ed41755f35ee4d08d7e6418b7896635f79510d68be`) and this file. No Swift or
 Rust change in the SDK. Not on the `nu7` branch.
+
+## Change: the newest scanned block's time (Zignal `dev` only)
+
+**Problem.** Zignal's protocol picks each message's daily conversation tag and stamps its
+prekeys with a time, and the contact checks both against block times. The app took that time
+from the phone's clock, so a phone with the wrong date sent messages its contacts couldn't read.
+The SDK had no public way to read a block's time.
+
+**Change.** `SDKSynchronizer.latestScannedBlock()` returns the height and header time of the
+highest scanned block (`maxScannedHeight` and the wallet database's `blocks` table, through the
+existing `TransactionSQLDAO.blockForHeight`). It reads the wallet database only; nothing is
+sent to the server.
+
+Files: `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift` and this file. The
+changed spot is marked `Zignal patch`. Not on the `nu7` branch.
