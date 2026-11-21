@@ -295,22 +295,22 @@ struct InviteScanner: UIViewControllerRepresentable {
 }
 
 /// Copies to this phone only: never to other devices through Universal Clipboard. The copy
-/// expires after 60 seconds: iOS removes it then, whatever else happens. The Lock button removes
-/// it sooner (see `clearOurCopy`). The next unlock tries to as well, also after the app was
-/// ended, but an iPhone test (November 19) showed it can miss after a trip to the Home Screen;
-/// the cause isn't known yet, so the expiry is the limit to rely on. Going to the background
-/// keeps the copy, so it can be pasted into another app. Stored as UTF-8 plain text, the type
-/// that the system Paste button and other apps read as text.
+/// expires after 60 seconds: iOS removes it then, whatever else happens. The Lock button and the
+/// next unlock remove it sooner (see `clearOurCopy`), also after the app was ended. Going to the
+/// background keeps the copy, so it can be pasted into another app. Stored as UTF-8 plain text,
+/// the type that the system Paste button and other apps read as text.
 @MainActor
 enum Clipboard {
     /// How long a copy stays on the pasteboard when nothing removes it sooner.
     static let lifetime: TimeInterval = 60
     /// Where the mark is kept. Tests use their own service.
     static var markService = Keychain.appService
-    /// The pasteboard's change count right after Zignal's last copy. While it's unchanged, what's
-    /// on the pasteboard is still Zignal's copy. Also kept in the Keychain (`pasteboardMark`),
-    /// because this is gone once the app is ended.
+    /// The pasteboard's change count right after Zignal's last copy (for the Debug log).
     private static var ourCopy: Int?
+    /// When Zignal's last copy expires; until then it may still be on the pasteboard. Also kept
+    /// in the Keychain (`pasteboardMark`, with the count), because this is gone once the app is
+    /// ended.
+    private static var ourCopyExpires: Date?
 
     static func copy(_ text: String) {
         let expires = Date().addingTimeInterval(lifetime)
@@ -320,21 +320,44 @@ enum Clipboard {
         )
         let count = UIPasteboard.general.changeCount
         ourCopy = count
+        ourCopyExpires = expires
         // Only the count and the expiry time, never what was copied.
         let mark = "\(count) \(Int(expires.timeIntervalSince1970))"
         try? Keychain.write(Data(mark.utf8), to: .pasteboardMark, service: markService)
+        #if DEBUG
+        debugLog("copied")
+        #endif
     }
 
-    /// Removes Zignal's copy if it's still on the pasteboard, so a message, an invite or an
-    /// address copied in one profile can't be pasted after a lock (into the other profile, or
-    /// into another app). Something copied since, in Zignal or elsewhere, is left alone.
+    /// Clears the pasteboard while Zignal's last copy may still be on it (within its 60 seconds),
+    /// so a message, an invite or an address copied in one profile can't be pasted after a lock
+    /// (into the other profile, or into another app). The pasteboard's change count can't tell
+    /// whether the copy is still there: an iPhone changes it by itself while Zignal is in the
+    /// background (an iPhone test on November 21: up by 2 on every trip to the Home Screen, with
+    /// nothing copied). So something copied elsewhere within those 60 seconds is cleared too.
+    /// Once they are over, iOS has removed the copy and nothing is touched.
     static func clearOurCopy() {
-        let count = ourCopy ?? savedMark()
+        #if DEBUG
+        debugLog("clear asked, saved mark \(savedMark().map { String($0) } ?? "none")")
+        #endif
+        let inMemory = ourCopyExpires.map { Date() < $0 } ?? false
+        let mayStillBeThere = inMemory || savedMark() != nil
         ourCopy = nil
+        ourCopyExpires = nil
         try? Keychain.delete(.pasteboardMark, service: markService)
-        guard let count, UIPasteboard.general.changeCount == count else { return }
+        guard mayStillBeThere else { return }
         UIPasteboard.general.items = []
+        #if DEBUG
+        debugLog("cleared")
+        #endif
     }
+
+    #if DEBUG
+    /// Debug builds only: the pasteboard's change count and Zignal's mark, never what was copied.
+    static func debugLog(_ event: String) {
+        print("Zignal debug: pasteboard \(event): change count \(UIPasteboard.general.changeCount), mark in memory \(ourCopy.map { String($0) } ?? "none")")
+    }
+    #endif
 
     /// The change count kept by an earlier run of the app. Nil once the copy has expired: iOS
     /// removed it then, and a later copy elsewhere may have the same count after a restart.
@@ -349,6 +372,7 @@ enum Clipboard {
     /// Tests only: forgets the in-memory mark, as ending the app does.
     static func forgetInMemoryMark() {
         ourCopy = nil
+        ourCopyExpires = nil
     }
 }
 

@@ -123,7 +123,7 @@ and this file. Every changed spot is marked `Zignal patch`.
 Both fixes are reported upstream: https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012
 (the stop issue, and the mempool watchers in a follow-up comment).
 
-## Change: the witness-repair record moves out of the app's preferences (Zignal `dev` only)
+## Change: the witness-repair record moves out of the app's preferences (after the Zecathon submission)
 
 **Problem.** Once per app version and wallet, `SDKSynchronizer.prepare` runs a witness repair
 and records the version it ran for in `UserDefaults.standard`, under
@@ -144,7 +144,7 @@ Files: `Sources/ZcashLightClientKit/Utils/WitnessesFixGate.swift`,
 `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
 
-## Change: a server switch doesn't restart a stopped synchronizer (Zignal `dev` only)
+## Change: a server switch doesn't restart a stopped synchronizer (after the Zecathon submission)
 
 **Problem.** `SDKSynchronizer.switchTo(endpoint:)` validates the new server (a network call
 that can take seconds), rebuilds the services, and then calls `start(retry: true)` whenever
@@ -161,7 +161,7 @@ Files: `Sources/ZcashLightClientKit/Utils/SDKFlags.swift`,
 `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
 
-## Change: no transparent-address queries (Zignal `dev` only)
+## Change: no transparent-address queries (after the Zecathon submission)
 
 **Problem.** On every sync, `FetchUTXOsAction` asked the light server for the unspent outputs of
 every transparent address of the wallet (`UTXOFetcher`, `listTransparentReceivers`), and
@@ -181,7 +181,7 @@ Files: `Sources/ZcashLightClientKit/Block/Actions/FetchUTXOsAction.swift`,
 `Sources/ZcashLightClientKit/Block/Enhance/BlockEnhancer.swift`, and this file. Every changed
 spot is marked `Zignal patch`. Not on the `nu7` branch.
 
-## Change: a recent mainnet checkpoint (Zignal `dev` only)
+## Change: a recent mainnet checkpoint (after the Zecathon submission)
 
 **Problem.** The newest bundled mainnet checkpoint was block 3,390,000 (June 2026), before NU6.3
 and NU7. The SDK uses bundled checkpoints in two places: a wallet restored from its recovery
@@ -203,7 +203,7 @@ Files: `Sources/ZcashLightClientKit/Resources/checkpoints/mainnet/3565000.json` 
 `a988108af7bf2d9ae92a26ed41755f35ee4d08d7e6418b7896635f79510d68be`) and this file. No Swift or
 Rust change in the SDK. Not on the `nu7` branch.
 
-## Change: the newest scanned block's time (Zignal `dev` only)
+## Change: the newest scanned block's time (after the Zecathon submission)
 
 **Problem.** Zignal's protocol picks each message's daily conversation tag and stamps its
 prekeys with a time, and the contact checks both against block times. The app took that time

@@ -1,47 +1,90 @@
 # Changelog
 
-Every change on the `dev` branch since the Zecathon submission, newest first. Each fix adds
-its entry here in the same commit.
+Every change since the Zecathon submission, newest first. Each fix adds its entry here in
+the same commit.
 
-- `main` (tag `zecathon-final`, October 28, 2026) is the submission and stays as submitted
-  until judging ends.
+- The tag `zecathon-final` (October 28, 2026) is the submission, exactly as submitted.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
+- Work happens on `dev`. `main` holds releases: tested versions of `dev`, each with a tag.
+  Until the first one is merged, `main` is still at `zecathon-final`.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
 ## 2026-11-21
 
+### Security
+- **Clean-up that can't be undone waits until the chain's time and the phone's clock
+  agree.** Since November 19 the app's clock is the time in the newest block the wallet has
+  scanned, and block times come from the light server. A server reporting times 22 or more
+  days ahead (wrong, or lying) made the weekly prekey rotation drop every prekey already
+  handed out, which ends all unused invites, and made the app give up at once on a
+  transaction it couldn't read yet. Both steps now run only while the chain's time and the
+  phone's clock are within a day of each other, and so does making an invite, which rotates
+  prekeys first. When they aren't, nothing is dropped, a new invite says why it can't be
+  made, and the chat list says that the phone's date and the network's time don't match.
+  Messages still go out on the chain's time, so the notice says they may not arrive. If both
+  clocks are wrong the same way, clean-up runs as before. Found by a November 20 review.
+  2 new tests.
+- **Zignal's copy is cleared at the next unlock after a trip to the Home Screen.** In an
+  iPhone test on November 19, an invite copied in one profile could still be pasted in the
+  other after going to the Home Screen and unlocking with the other PIN. An iPhone test on
+  November 21 found why: while Zignal is in the background, the iPhone changes the
+  pasteboard's change count by itself (up by 2 on every trip), and the unlock took that for
+  something copied since and left Zignal's copy. The Lock button and the next unlock now
+  clear the pasteboard whenever Zignal's last copy may still be there, within its 60
+  seconds, whatever the count says. So something copied elsewhere within those seconds is
+  cleared too. Going to the background still keeps the copy, so it can be pasted into
+  another app. 2 tests changed.
+- **Every unlock takes at least 0.75 seconds from the accepted PIN to the profile showing.**
+  Opening a profile takes longer the more it holds, and a panic unlock saves the profile
+  files once more, so the time an unlock took could hint at which profile opened or that a
+  wipe ran. The minimum covers both as long as opening stays under it. That hasn't been
+  measured on an iPhone with a large profile yet; Debug builds print the time. From a
+  November 18 review.
+
 ### Fixed
+- **A chat's first messages say "sent, waiting for a first reply", not "delivered".**
+  "Delivered" means the transaction is in a block. While nothing from the contact has been
+  read in a chat, that doesn't show their phone could read it: an invite that was used
+  before, both people scanning each other's invite, and an invite from a profile restored
+  since all look the same from this phone. After the first reply, messages say "delivered"
+  as before. From a November 18 review. 1 new test.
 - **A profile whose file isn't on the phone asks when its wallet was created.** A profile's
   file holds its wallet's date, and phone backups never hold that file, so after a backup was
   restored a profile opened empty and its wallet started at the chain tip: its funds looked
   gone. The profile still opens empty (chats can't come back), and above the wallet it asks
   for the wallet's block height or the date it was created; the wallet starts once one is
   given (or neither: October 1, 2026) and looks for its funds from there. Found by a
-  November 18 review. 2 new tests.
+  November 18 review. 2 new tests. (`4679be2`)
 - **A restore with nothing entered starts at October 1, 2026, not today.** A restore that kept
   the screen's date scanned from the day before and didn't show funds received earlier. No
   wallet made in Zignal is older than October 2026; an earlier date can still be picked.
-  1 new test.
+  1 new test. (`4679be2`)
 - **A message or a chat start that couldn't be saved leaves the chat as it was.** The chat's
   keys moved on before the save, so when saving failed (a full disk, say) the next message
   went out on keys the contact didn't expect, or, after "Start over", on a chat the contact
   never got, until the app locked. The chat is now put back the way it was. Found by two
-  November 18 reviews. 1 new test.
+  November 18 reviews. 1 new test. (`4679be2`)
 
 ### Added
+- **A profile that came back without its chats says how to reach contacts again.** A
+  recovery phrase brings back the wallet and the identity, not chats, and contacts' phones
+  keep sending on the old chats: their messages show "delivered" there and can't be read
+  here. Until the profile has a contact, its chat list now says that one of the two has to
+  scan a new invite from the other (a contact who scans is asked to start the chat over).
+  From a restore test on November 20.
 - **Restore from a block height or a date.** The restore screen and the question above take a
   block height, a date picked on a wheel, or both; with both, scanning starts from the earlier
   one. A height must be a whole number from 419,200 (Sapling) up and not past the chain's
   end; the wallet starts one block before it, so funds in that very block are found. The
   restore screen says in red that restoring isn't advised: Zignal is meant to start with new
   profiles, and the panic PIN can't erase a copy of the words kept in another app. Both
-  screens say in red that only funds from that point on show. 2 new tests.
+  screens say in red that only funds from that point on show. 2 new tests. (`4679be2`)
 - **Restore the real profile, the decoy, or both.** The restore screen asks which messenger
   profile to bring back: PIN 1 (the unlock PIN, the real profile), PIN 2 (the duress PIN, the
   decoy), or both, each from its own 24 words. A profile that isn't restored starts new; the
   same phrase for both is refused. Before, a phrase always became the real profile and the
-  decoy always started new. Chats don't come back. 2 new tests.
+  decoy always started new. Chats don't come back. 2 new tests. (`4679be2`)
 
 ### Repository
 - **License: AGPL-3.0-only from this commit.** Zignal's own code (everything except
@@ -49,17 +92,29 @@ its entry here in the same commit.
   Affero General Public License, version 3; `LICENSE-MIT` and `LICENSE-APACHE` are removed,
   and the two Rust crates' `license` fields say `AGPL-3.0-only`. Whoever shares Zignal's
   code, changed or not, must pass on their source under the same license. Versions already
-  published (`main`, `nu7`, the tags `zecathon-final` and `zecathon-nu7`, and `dev` up to
-  `1341797`) stay under MIT or Apache-2.0. The SDK in `vendor/` keeps its MIT license. No code
-  changes.
+  published (the tags `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits
+  up to `1341797`) stay under MIT or Apache-2.0. The SDK in `vendor/` keeps its MIT license.
+  No code changes. (`5bb6e53`)
 
 ### Documentation
+- README, CHANGELOG, SECURITY.md and the SDK's `ZIGNAL-PATCHES.md` no longer depend on the
+  branch they are read on: the Zecathon submission is named by its tag (`zecathon-final`),
+  `main` is described as holding tagged releases of `dev`, the README's "This branch
+  (`dev`)" section is now "Since the Zecathon submission", and the SDK's five later changes
+  are headed "after the Zecathon submission" instead of "`dev` only". The License section,
+  the license entry and its row in the README name earlier versions by tag and commit. Also
+  in the README: the light server as the source of the chain's time; a contact who restored
+  their profile; the SDK's five changes since the submission, not four (the fifth reads the
+  newest scanned block's time); tests through November 20; `basic-toml` and `bincode` 1.3.3
+  in `zkw-ffi` marked unmaintained; what Debug builds print; the camera staying on after a
+  scan until the Add contact screen closes, and turning off camera access when not scanning;
+  and the commits of the license change and the restore changes.
 - README, from the November 18 reviews: what a restored phone backup brings back; an edited
   copy of a used invite isn't recognized as used; a server may link a wallet's syncs by where
   each one resumes; about 106 guesses a day with the wrong-PIN wait, not 100; the primitives'
   crates are no longer all called audited; the tests need an iOS 27 Simulator or iPhone;
   `bincode` and `paste` in the SDK are marked unmaintained; the test list. A comment in the
-  privacy manifest no longer names a script that isn't in the repository.
+  privacy manifest no longer names a script that isn't in the repository. (`4679be2`)
 
 ## 2026-11-19
 

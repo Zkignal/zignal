@@ -12,6 +12,7 @@ enum ZignalError: LocalizedError {
     case invalidRecoveryPhrase
     case walletNotReady
     case walletCatchingUp
+    case clocksDisagree
     case walletMismatch
     case notEnoughFunds
     case notEnoughToPrepare(minimum: Int64)
@@ -32,6 +33,7 @@ enum ZignalError: LocalizedError {
         case .invalidRecoveryPhrase: "That isn't a valid 24-word recovery phrase. Check each word."
         case .walletNotReady: "The wallet is still starting. Try again in a moment."
         case .walletCatchingUp: "The wallet is still catching up with the network. Try again once it says Up to date."
+        case .clocksDisagree: "This phone's date and the network's time don't match, so an invite can't be made right now. Check Date & Time in the Settings app, or choose another server under Network, then try again."
         case .walletMismatch: "The wallet on this phone doesn't belong to this profile."
         case .notEnoughFunds: "Not enough ZEC in this wallet yet. Add funds and wait for them to confirm."
         case .notEnoughToPrepare(let minimum):

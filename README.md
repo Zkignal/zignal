@@ -12,25 +12,27 @@ only some metadata (see [Security notes](#security-notes-and-known-limitations))
 > **Status:** experimental, built for the Zecathon (October 2026). Not audited.
 > It runs on Zcash mainnet with real ZEC, so use small amounts.
 >
-> **You are reading the `dev` branch.** It is ahead of the Zecathon submission (`main`, tag
-> `zecathon-final`): it supports NU7 and has the fixes listed in
-> [This branch](#this-branch-dev) below.
+> **This version is ahead of the Zecathon submission** (tag `zecathon-final`): it supports
+> NU7 and has the changes listed in
+> [Since the Zecathon submission](#since-the-zecathon-submission) below.
 
-## This branch (`dev`)
+## Since the Zecathon submission
 
-| Branch | What it holds |
+| Branch or tag | What it holds |
 |---|---|
-| `main` | The Zecathon submission, tag `zecathon-final` (October 28, 2026). It stays as submitted until judging ends. |
+| tag `zecathon-final` | The Zecathon submission (October 28, 2026), exactly as submitted. |
 | `nu7` | `zecathon-final` plus only the SDK update for NU7 (nothing in the app changes) and its README. Tagged `zecathon-nu7` after testing on mainnet past NU7 activation. |
-| `dev` | Where work continues: the same SDK as `nu7`, plus app fixes. Tested releases move to `main` later. |
+| `dev` | Where work continues: the same SDK as `nu7`, plus app fixes. |
+| `main` | Releases: tested versions of `dev`, each with a tag. Until the first one is merged, `main` is still at `zecathon-final`. |
 
-What `dev` changes compared with `main`, newest first. [CHANGELOG.md](CHANGELOG.md) lists every
-change on `dev` with its commits and gets an entry with each fix.
+What has changed since the submission, newest first. [CHANGELOG.md](CHANGELOG.md) lists
+every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | |
-| Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (`main`, `nu7`, `dev` up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | |
+| Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | |
+| Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | `4679be2` |
+| Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (the tags `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | `5bb6e53` |
 | Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | `1341797` |
 | Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | `319bc3e` |
 | Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
@@ -57,7 +59,7 @@ change on `dev` with its commits and gets an entry with each fix.
 | Nov 1 | **The build keeps the builder out of the library.** File paths from the build machine are removed, and the build stops if any remain. The library targets iOS 17.0, the app's minimum. | By default, Rust and C compilers embed source file paths in a library, including the builder's home folder, and from there they end up in the app. | `f66c1c3` |
 | Oct 29 | **Prepare** (formerly "Prepare for chatting") splits your balance only when it helps. It estimates how many messages can go out back to back from the last split. It waits while recent messages' change confirms, instead of splitting again. The button shows Ready, Confirming or Prepare, with one line saying why. | Before, the app could suggest splitting again when it didn't need to, and the long label wrapped onto two lines. | `04cd9fd` `cde5a42` |
 
-Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
+Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
 - existing wallets upgraded to the new wallet database and kept syncing;
 - messages both ways with Tor on and off, before and after NU7 activated (November 6, UTC);
 - Add funds and Prepare;
@@ -69,11 +71,16 @@ Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
 - the app's tests on the phone after each change from November 10 on;
 - messages both ways between two iPhones (November 14);
 - the app icon, then syncing and messages both ways between the real and decoy profiles
-  on one iPhone (November 18).
+  on one iPhone (November 18);
+- messages both ways and an invite on the chain's clock, and a copy gone after its 60
+  seconds (November 19);
+- restores on the Simulator (November 20): both profiles from their own phrases, and the
+  real profile alone from a date. Funds came back, and messages went both ways with an
+  iPhone.
 
-128 app tests and 2 UI tests pass.
+131 app tests and 2 UI tests pass.
 
-> **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
+> **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
 > phrases: they restore the wallets in any build.
 
@@ -142,7 +149,8 @@ more. Taken on the Simulator in dark mode on November 17, so it shows the newer 
   a first message. Each contact gets a fresh shielded address.
 - **Delivery status:** sending, sent, delivered (in a block), or not sent, with tap to resend.
   A send cut short by locking the app shows sent while its transaction waits, then delivered
-  once it's in a block.
+  once it's in a block. Until a first reply has been read in a chat, its messages say
+  "sent, waiting for a first reply" instead of delivered.
 - **Wallet:** balance and sync status, Add funds (QR code of a shielded address), Prepare
   (splits the balance so several messages can go out in a row, only when that helps), and
   network settings (server list and a Tor switch).
@@ -193,8 +201,8 @@ that's on the roadmap.
 - **One iPhone, no ZEC:** use the demo contact (New chat > Start demo chat) to see the full
   protocol without touching the network.
 - **Tested on:** iPhone 16 Pro, iOS 27, Zcash mainnet: invites by paste, messages both ways
-  with delivery status, safety numbers, Tor on and off. `dev` was tested again November 1 to 18
-  (see [This branch](#this-branch-dev)).
+  with delivery status, safety numbers, Tor on and off. Later versions were tested again
+  November 1 to 20 (see [Since the Zecathon submission](#since-the-zecathon-submission)).
 
 ## Repository layout
 
@@ -205,7 +213,7 @@ that's on the roadmap.
 | `zkw-ffi/` | Swift bindings for `zkw-core` (UniFFI) and the iOS XCFramework build script |
 | `ios/Zignal/` | SwiftUI iOS app: `Core/` (storage, vault, sessions, wallet), `UI/` (screens), `Generated/` (bindings) |
 | `ios/Zignal/scripts/` | Downloads and hash-checks the Zcash Sapling parameters bundled into the app |
-| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and on `dev` four more changes), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
+| `vendor/zcash-swift-wallet-sdk/` | Zignal's fork of the Zcash Swift SDK 3.0.0 (MIT): two fixes in the Swift code (and five more changes since the Zecathon submission), and its Rust layer on the NU7 crates, built with `Scripts/build-ios-ffi.sh`. See `ZIGNAL-PATCHES.md` there |
 
 ## Protocol at a glance
 
@@ -253,11 +261,15 @@ that's on the roadmap.
 - **Clock:** messages, invites and prekeys use the time of the newest block the wallet has
   scanned, not the phone's date, so a phone with the wrong date still sends messages its
   contacts can read. Until the wallet has nearly caught up with the network, sending a message
-  or making an invite waits for it.
+  or making an invite waits for it. Making an invite, dropping old prekeys and giving up on a
+  transaction that couldn't be read also wait until the phone's clock is within a day of that
+  time (see Security notes).
 - **Receiving:** after each sync, new transactions are read in chain order, each at its own
   block time, so a message read days later still finds its chat.
 - **Delivered** means the transaction is in a block. There are no read receipts, which would
-  cost the reader a transaction and reveal when they read.
+  cost the reader a transaction and reveal when they read. So it doesn't show that the
+  contact's phone could read the message: until a first reply has been read in a chat, its
+  messages say "sent, waiting for a first reply".
 - **Servers:** public lightwalletd servers by default (zec.rocks, Stardust and Cake Wallet;
   only the first is used), editable in the app, including your own. Tor is off by default
   and can be switched on per profile.
@@ -275,11 +287,12 @@ that's on the roadmap.
   open and could recreate a deleted wallet database). With the fixes, a stopped wallet stays
   stopped. Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`; both are reported
   upstream in [zcash/zcash-swift-wallet-sdk#2012](https://github.com/zcash/zcash-swift-wallet-sdk/issues/2012).
-  On `dev`, four more changes: the SDK's per-wallet record of its witness repair is kept in
-  the wallet's own folder instead of the app's preferences, a server switch no longer
-  restarts a wallet the app has stopped, the wallet never asks the server about its
-  transparent addresses, and a recent checkpoint (block 3,565,000, after NU7) shortens
-  restores from a recovery phrase.
+  Since the Zecathon submission, five more changes: the SDK's per-wallet record of its
+  witness repair is kept in the wallet's own folder instead of the app's preferences, a
+  server switch no longer restarts a wallet the app has stopped, the wallet never asks the
+  server about its transparent addresses, a recent checkpoint (block 3,565,000, after NU7)
+  shortens restores from a recovery phrase, and the wallet can read the time of the newest
+  block it has scanned (the clock for messages and invites).
 
 ## How the app protects data on the phone
 
@@ -370,11 +383,11 @@ that's on the roadmap.
 - Third-party keyboards are blocked, and the message box has autocorrect off.
 - Received text is shown verbatim, never rendered as Markdown or links.
 - Copied invites, addresses and message text stay on this phone (no Universal Clipboard)
-  and expire after 60 seconds: iOS removes them then. The Lock button removes Zignal's copy
-  sooner, unless something else was copied since. The next unlock tries to as well, so a
-  copy made in one profile isn't left for the other, also after the app was ended: the
-  Keychain keeps the pasteboard's change count and the expiry time (never the text) until
-  the next unlock or lock. On an iPhone it can still miss after a trip to the Home Screen
+  and expire after 60 seconds: iOS removes them then. The Lock button and the next unlock
+  remove Zignal's copy sooner, so a copy made in one profile isn't left for the other, also
+  after the app was ended or a trip to the Home Screen: the Keychain keeps the pasteboard's
+  change count and the expiry time (never the text) until the next unlock or lock. Within
+  those 60 seconds they clear the whole pasteboard, a copy made in another app included
   (see [Security notes](#security-notes-and-known-limitations)). Going to the background
   keeps the copy, so an invite or an address can be pasted into another app; until it
   expires, any app can read it then. Share invite and Share address send it straight to the
@@ -384,7 +397,11 @@ that's on the roadmap.
   mirrored or shared, so a recording that's already running doesn't catch them.
 
 **Logging and network**
-- The app has no logging and no analytics, and the Zcash SDK's logging is turned off.
+- The app has no logging and no analytics, and the Zcash SDK's logging is turned off. Debug
+  builds run from Xcode print two kinds of lines to Xcode's console, to check that Zignal's
+  copy is cleared and to time unlocks: counts and durations, never text, keys or what was
+  copied.
+  TestFlight and App Store builds don't contain them.
 - Its only network traffic is the wallet talking to the server you choose.
 
 ## Network privacy: Tor, a VPN or your own server
@@ -506,7 +523,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 128 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 131 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -537,6 +554,9 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     a restore from a block height, a date or both (the earlier one wins, heights checked,
     October 1, 2026 when neither is given), a phrase restored as the decoy profile, both
     profiles restored from their own phrases, and a chat put back after a save that failed;
+  - the two clocks that must agree before prekeys are dropped (a chain time 22 days ahead
+    leaves an invite working), a chat waiting for its first reply, and Zignal's copy
+    cleared within its 60 seconds even when the pasteboard's count has moved on;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -562,12 +582,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   them up. ZEC sent to one of the wallet's transparent addresses isn't shown; restoring the
   24 words in a full Zcash wallet recovers it.
 - **Tor and certificates:** with Tor on, the server's certificate is checked by the Zcash SDK's
-  own code, not by iOS. The Zecathon build (`main`, SDK 3.0.0) still trusts eight certificate
-  authorities whose keys leaked in October 2026. iOS itself already blocks them, so Tor off
-  is not affected. Someone holding one of those keys and sitting between Tor and the server
-  could pose as the server: see which transactions you fetch, hide or fake server data, block
-  sends. They can't take funds or read messages. **Fixed on `dev` and `nu7`**, which use
-  `rustls-webpki` 0.103.16 and `webpki-roots` 1.0.11.
+  own code, not by iOS. The Zecathon build (`zecathon-final`, SDK 3.0.0) still trusts eight
+  certificate authorities whose keys leaked in October 2026. iOS itself already blocks them,
+  so Tor off is not affected. Someone holding one of those keys and sitting between Tor and
+  the server could pose as the server: see which transactions you fetch, hide or fake server
+  data, block sends. They can't take funds or read messages. **Fixed on `dev` and `nu7`**,
+  which use `rustls-webpki` 0.103.16 and `webpki-roots` 1.0.11.
 - **A send that didn't finish:** after a lock or a crash, the message shows "Checking whether
   it went out…" until the wallet has looked, then "sent" while its transaction waits to be
   mined. If it never reached the server, the Zcash SDK resends it every few minutes while the
@@ -580,12 +600,35 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   written still carries the conversation tag of the day it was written, so the contact's
   phone doesn't read it, while this phone shows it delivered. Until the fix (see Roadmap),
   write such a message again instead.
-- **Zignal's copy after a trip to the Home Screen:** in an iPhone test on November 19, an
-  invite copied in one profile could still be pasted in the other after going to the Home
-  Screen, coming back and unlocking with the other PIN: the next unlock didn't remove it.
-  The cause isn't known yet (see Roadmap). Until it's fixed, iOS removes every copy after 60
-  seconds, and the Lock button removes Zignal's copy at once: press Lock before handing the
-  phone over, or wait a minute after copying.
+- **The chain's time comes from the light server:** Zignal's clock is the time in the newest
+  block the wallet has scanned, and Zignal doesn't check block times against another source.
+  A server reporting wrong times can make the messages you send unreadable for the contact
+  (they carry the wrong day's tag) while this phone shows them delivered, and can keep this
+  phone from reading messages that arrive in blocks whose times it misreports. When the
+  chain's time and the phone's clock are more than a day apart, the chat list says so. Until
+  they agree again, no invite can be made and nothing that can't be undone happens: old
+  prekeys aren't dropped (so prekeys aren't rotated either) and no unread transaction is
+  given up on. Sending isn't blocked. If the phone's date is wrong the same way as the
+  server's time, nothing notices. Use servers you trust, or your own.
+- **A contact who restored their profile:** a recovery phrase brings back the wallet and the
+  identity, not chats. What you send them on the old chat still shows delivered, and their
+  phone can't read it; nothing tells your phone that they restored. Their app says, until it
+  has a contact, that one of you has to scan a new invite from the other. "Delivered" only
+  means the transaction is in a block: a new chat's messages say "sent, waiting for a first
+  reply" until something from the contact has been read.
+- **Zignal's copy and other copies:** while Zignal's last copy may still be on the
+  pasteboard (its 60 seconds), the Lock button and the next unlock clear the whole
+  pasteboard. An iPhone changes the pasteboard's change count by itself while Zignal is in
+  the background, so Zignal can't tell its copy from one made elsewhere since: something
+  you copied in another app within those seconds is cleared too. In the background the
+  copy stays, so an address or an invite can be pasted into another app; until it
+  expires, any app can read it then.
+- **The camera after a scan:** once the Add contact screen has read an invite, the camera
+  stays on (the green dot) until that screen closes, when you send or press Cancel. Zignal
+  doesn't record or keep what the camera sees. Paste works without the camera: if you
+  prefer, turn off camera access for Zignal in the Settings app when you're not scanning,
+  and turn it on again to scan. Turning the camera off as soon as an invite is read is
+  planned.
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
@@ -603,7 +646,10 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
     Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet;
   - `chrono` and `humantime` are marked unmaintained (RUSTSEC-2026-0543 and
     RUSTSEC-2026-0542, informational): no known vulnerability;
-  - `bincode` 2.0.1 and `paste` 1.0.15 are marked unmaintained too (informational).
+  - `bincode` 2.0.1 and `paste` 1.0.15 are marked unmaintained too (informational);
+  - in `zkw-ffi`'s own lock file, `basic-toml` 0.1.10 (RUSTSEC-2026-0374) and `bincode` 1.3.3
+    (RUSTSEC-2025-0141) are marked unmaintained (informational): no known vulnerability.
+    Both come in through UniFFI, which generates the Swift bindings.
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
@@ -658,7 +704,10 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   - Opening the decoy never waits for the clean-up: a wallet that is still stopping is
     waited for in the background, after the decoy is on screen.
   - Before the decoy shows, a panic unlock saves the profile files once more than other
-    unlocks do. The difference is small but could be measured; removing it is planned.
+    unlocks do, and any profile takes longer to open the more it holds. Every unlock now
+    takes at least 0.75 seconds from the accepted PIN to the profile showing, which covers
+    both as long as opening stays under that. It hasn't been measured on an iPhone with a
+    large profile yet; removing the extra save is still planned.
 - **The panic PIN leaves a trace:** it destroys the real profile and keeps the same number of
   profile files, but the real profile's wallet files are deleted without a replacement.
   Someone examining the phone's files can then see that only the open profile has a wallet.
@@ -697,7 +746,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   app yet) or partial messages for the price of a fee. Zignal's core keeps at most 32 requests
   and 64 incomplete messages, dropping the oldest first.
 - **NU7:** NU7 activated on mainnet at block 3,543,405 on November 6, 2026, at 02:34 UTC.
-  - The Zecathon build (`main`, `zecathon-final`) uses SDK 3.0.0's prebuilt library, so it
+  - The Zecathon build (`zecathon-final`) uses SDK 3.0.0's prebuilt library, so it
     stops syncing and can't send after that.
   - ECC's SDK ends support at NU7. Its final release, 4.0.0, doesn't include NU7, and
     development continues in the ZODL Swift Wallet SDK (AGPLv3).
@@ -712,7 +761,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 - **TestFlight:** private testing first, then a public link.
 - **NU7 compatibility:** done on `nu7` and `dev`, tagged `zecathon-nu7` after testing past
-  activation (see [This branch](#this-branch-dev)).
+  activation (see [Since the Zecathon submission](#since-the-zecathon-submission)).
 - **Length privacy:** an option to pad messages to fixed memo counts, so the fee doesn't show
   how long a message was.
 - **Prebuilt SDK library:** publish the built library with each release, so building the app
@@ -738,9 +787,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   sent, so the contact reads it; an unused invite's ID that expires with its keys and
   accepts only the keys it carried; random prekey IDs instead of counters; and a random
   delay before fetches over Tor (or blocks over Tor too), so a fetch can't be timed to a
-  sync. Removing Zignal's copy from the pasteboard at lock is done on `dev`; at unlock it
-  can still miss on an iPhone after a trip to the Home Screen, and the cause is being
-  looked into (see Security notes).
+  sync. Removing Zignal's copy from the pasteboard at lock and at the next unlock is done.
+- **From the November 20 review:** a core that keeps the prekeys unused invites still need,
+  whatever time it is given. In the app, clean-up that waits until the chain's time and the
+  phone's clock agree is done.
+- **The camera off as soon as an invite is read**, without waiting for the Add contact
+  screen to close.
 - **Lower fees:** the Zcash SDK on the librustzcash release with the ZIP 2009 fee (1,000
   zatoshis per action), with the app's fee texts in the same change.
 - **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
@@ -757,7 +809,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 ## Development log
 
 Zignal's own code up to `zecathon-final` was written during the Zecathon build window. Dates
-match the git history; the rows after October 28 are on `dev`.
+match the git history; the rows after October 28 were made on `dev`.
 
 | Date | Commit | Milestone |
 |---|---|---|
@@ -804,6 +856,8 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-19 | `64880e5` | `dev`: README: tests through November 18 and corrections |
 | 2026-11-19 | `319bc3e` | `dev`: messages, invites and prekeys on the chain's clock |
 | 2026-11-19 | `1341797` | `dev`: copies expire after 60 seconds; Share invite and Share address |
+| 2026-11-21 | `5bb6e53` | `dev`: license: AGPL-3.0-only from this commit (was MIT or Apache-2.0) |
+| 2026-11-21 | `4679be2` | `dev`: restore from a block height or a date, for the real profile, the decoy or both; a failed save leaves the chat as it was |
 
 ## Credits
 
@@ -813,8 +867,9 @@ libraries:
 - **Zcash Swift SDK** ([ZcashLightClientKit](https://github.com/zcash/zcash-swift-wallet-sdk),
   MIT, Znewco, Inc. (Zcash Open Development Lab), maintained in the `zcash` GitHub
   organization): wallet sync, keys, addresses and transactions. Release 3.0.0 is
-  included in `vendor/` under its own MIT license, with Zignal's two fixes (and on `dev` four
-  more changes) and, on `dev` and `nu7`, its Rust layer rebuilt on the NU7 crates, all
+  included in `vendor/` under its own MIT license, with Zignal's two fixes (and five more
+  changes since the Zecathon submission) and, on `dev` and `nu7`, its Rust layer rebuilt on
+  the NU7 crates, all
   listed in `ZIGNAL-PATCHES.md`. It includes
   **[librustzcash](https://github.com/zcash/librustzcash)** (MIT/Apache-2.0) and
   **[arti](https://gitlab.torproject.org/tpo/core/arti)** (Tor in Rust, MIT/Apache-2.0).
@@ -853,9 +908,10 @@ the GNU Affero General Public License for more details.
   source too.
 - **`vendor/zcash-swift-wallet-sdk/`** keeps its own MIT license, Zignal's changes to it
   included.
-- **Earlier versions:** `main`, `nu7`, the tags `zecathon-final` and `zecathon-nu7`, and `dev`
-  up to `1341797` were published under the MIT license or the Apache License 2.0, at your
-  option, and stay under those terms. Their license files are in the repository's history.
+- **Earlier versions:** everything published before commit `5bb6e53` (the tags
+  `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits up to `1341797`) was
+  published under the MIT license or the Apache License 2.0, at your option, and stays under
+  those terms. Their license files are in the repository's history.
 - **Other terms:** the Zignal authors can also release Zignal's own code under other terms,
   and do so for any build they distribute through Apple (TestFlight, the App Store). Code
   from other people can be added only under an agreement that keeps this possible. There

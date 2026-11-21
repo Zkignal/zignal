@@ -34,8 +34,8 @@ publish an advisory and credit you, if you want.
 Report bugs in librustzcash, the upstream Zcash Swift SDK, lightwalletd or Zebra to those
 projects, and tell us too if they affect Zignal.
 
-Fixes go to the `dev` branch. `main` is the Zecathon submission and stays as submitted until
-judging ends.
+Fixes go to the `dev` branch first. `main` holds releases: tested versions of `dev`, each
+with a tag. The Zecathon submission stays at the tag `zecathon-final`.
 
 ## Known limitations
 

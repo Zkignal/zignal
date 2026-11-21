@@ -451,13 +451,24 @@ enum IncomingReading {
     /// Whether a transaction is finished with, so it isn't read again. One with zkw memos that
     /// couldn't be read is tried again for `retryWindow` after it was sent (`sentAt`, its block
     /// time): the message that opens its chat may still be on its way. `now` is the chain's time
-    /// (`ChainClock`), never the phone's; 0 while it isn't known, which keeps trying.
+    /// (`ChainClock`), never the phone's; 0 while it isn't known, or while the phone's clock
+    /// doesn't agree with it (`ChainClock.agreed`), which keeps trying.
     static func isDone(read: Bool, complete: Bool, memos: [Data], sentAt: UInt64, now: UInt64) -> Bool {
         if read { return true }
         // Until the wallet has scanned every block, anything may still be missing.
         guard complete else { return false }
         guard memos.contains(where: ZkwMemo.isEnvelope) else { return true }
         return now > sentAt && now - sentAt > retryWindow
+    }
+}
+
+/// A chat nothing has come back on yet. Its messages are in blocks (all "delivered" can mean),
+/// but nothing shows that the contact's phone could read them: an invite that was used before,
+/// crossed invites and a contact who restored their profile all look the same from here.
+enum FirstReply {
+    /// True while no message from the contact has been read in this chat.
+    static func isWaiting(_ thread: [ChatMessage]) -> Bool {
+        !thread.contains { !$0.outgoing }
     }
 }
 
@@ -468,6 +479,10 @@ enum IncomingReading {
 /// or more days off sent messages nobody could read, shown as delivered. Prekeys (and so
 /// invites) were stamped with the phone's date too, so a wrong date made invites expire early,
 /// or live too long. Now both sides use block times from the same chain.
+///
+/// Block times reach the wallet through its light server, which can be wrong or lie. So steps
+/// that can't be undone also need the phone's clock to agree with the chain's time (`agreed`),
+/// and the chat list says when the two don't match (`disagree`).
 enum ChainClock {
     /// How far (in blocks) the newest scanned block may be behind the chain tip the server
     /// reports and still count as "now": 2 hours at 25 seconds a block, 6 at 75. The contact
@@ -481,6 +496,32 @@ enum ChainClock {
         guard scannedHeight > 0, tipHeight > 0, scannedTime > 0,
               tipHeight - scannedHeight <= maxLag else { return nil }
         return UInt64(scannedTime)
+    }
+
+    /// How far apart the chain's time and the phone's clock may be and still agree: a day. The
+    /// chain's time runs up to a few hours behind (`maxLag`), and a phone's clock is rarely more
+    /// than minutes off.
+    static let tolerance: UInt64 = 86_400
+
+    /// True when the chain's time is known and the phone's clock is more than `tolerance` away
+    /// from it. One of the two is wrong then, and Zignal can't tell which: the light server
+    /// supplies the block times, and the user sets the phone's date.
+    static func disagree(chain: UInt64?, phone: Date) -> Bool {
+        guard let chain else { return false }
+        let seconds = phone.timeIntervalSince1970
+        guard seconds.isFinite, seconds >= 0, seconds < 4_000_000_000_000 else { return true }
+        let phoneTime = UInt64(seconds)
+        return (chain > phoneTime ? chain - phoneTime : phoneTime - chain) > tolerance
+    }
+
+    /// The time for steps that can't be undone (dropping old prekeys, which ends every invite
+    /// made from them, and giving up on a transaction that couldn't be read) and for making an
+    /// invite: the chain's time, but only while the phone's clock agrees with it. Nil otherwise,
+    /// so one wrong clock alone, a lying server's or a phone's, never destroys anything.
+    /// Messages still go out and are read on the chain's time either way.
+    static func agreed(chain: UInt64?, phone: Date) -> UInt64? {
+        guard let chain, !disagree(chain: chain, phone: phone) else { return nil }
+        return chain
     }
 }
 

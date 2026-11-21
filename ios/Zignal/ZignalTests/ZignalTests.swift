@@ -38,16 +38,21 @@ struct ClipboardTests {
         }
     }
 
-    @Test @MainActor func lockingRemovesOnlyZignalsOwnCopy() {
+    @Test @MainActor func lockingClearsWhileZignalsCopyMayStillBeThere() {
         withTestMark { _ in
             Clipboard.copy("zignal:test-invite")
             Clipboard.clearOurCopy()
             #expect(!UIPasteboard.general.hasStrings)
-            // Something copied after Zignal's copy, here or in another app, stays.
-            Clipboard.copy("zignal:test-invite")
+            // With no Zignal copy in its 60 seconds, something copied elsewhere stays.
             UIPasteboard.general.string = "copied elsewhere"
             Clipboard.clearOurCopy()
             #expect(UIPasteboard.general.string == "copied elsewhere")
+            // Within them, the pasteboard is cleared even though its change count moved on: an
+            // iPhone changes the count by itself while Zignal is in the background.
+            Clipboard.copy("zignal:test-invite")
+            UIPasteboard.general.string = "copied elsewhere"
+            Clipboard.clearOurCopy()
+            #expect(!UIPasteboard.general.hasStrings)
         }
     }
 
@@ -71,12 +76,12 @@ struct ClipboardTests {
             Clipboard.clearOurCopy()
             #expect(!UIPasteboard.general.hasStrings)
             #expect(try Keychain.read(.pasteboardMark, service: service) == nil)
-            // Something copied since, here or in another app, still stays.
+            // Within the copy's 60 seconds the pasteboard is cleared, whatever its count says.
             Clipboard.copy("zignal:test-invite")
             UIPasteboard.general.string = "copied elsewhere"
             Clipboard.forgetInMemoryMark()
             Clipboard.clearOurCopy()
-            #expect(UIPasteboard.general.string == "copied elsewhere")
+            #expect(!UIPasteboard.general.hasStrings)
         }
     }
 
@@ -1272,6 +1277,71 @@ struct ChainClockTests {
         // Up to a day ahead is ordinary clock skew.
         let skewed = try ZkwInbox(seed: secureRandom(32), now: chain + 86_400 - 1)
         #expect(try !skewed.rotatePrekeysIfDue(now: chain))
+    }
+
+    @Test func theTwoClocksMustAgreeBeforeAnythingIsDropped() {
+        let chain: UInt64 = 1_790_000_000
+        let phone = Date(timeIntervalSince1970: TimeInterval(chain))
+        // The same moment, and up to a day either way: the chain's time is used.
+        #expect(ChainClock.agreed(chain: chain, phone: phone) == chain)
+        #expect(ChainClock.agreed(chain: chain + ChainClock.tolerance, phone: phone) == chain + ChainClock.tolerance)
+        #expect(ChainClock.agreed(chain: chain - ChainClock.tolerance, phone: phone) == chain - ChainClock.tolerance)
+        #expect(!ChainClock.disagree(chain: chain + ChainClock.tolerance, phone: phone))
+        // Block times 22 days ahead of the phone, or 3: no agreed time, and the app warns.
+        #expect(ChainClock.agreed(chain: chain + 22 * 86_400, phone: phone) == nil)
+        #expect(ChainClock.disagree(chain: chain + 22 * 86_400, phone: phone))
+        #expect(ChainClock.agreed(chain: chain + 3 * 86_400, phone: phone) == nil)
+        // A phone's date a day and a second ahead of the chain.
+        #expect(ChainClock.agreed(chain: chain - ChainClock.tolerance - 1, phone: phone) == nil)
+        #expect(ChainClock.disagree(chain: chain - ChainClock.tolerance - 1, phone: phone))
+        // A date before 1970 never agrees.
+        #expect(ChainClock.agreed(chain: chain, phone: Date(timeIntervalSince1970: -1)) == nil)
+        // While the chain's time isn't known there is nothing to compare: no time, no warning.
+        #expect(ChainClock.agreed(chain: nil, phone: phone) == nil)
+        #expect(!ChainClock.disagree(chain: nil, phone: phone))
+    }
+
+    @Test func aChainClockWeeksAheadDoesNotEndInvitesAlreadyHandedOut() throws {
+        let chain: UInt64 = 1_790_000_000
+        let phone = Date(timeIntervalSince1970: TimeInterval(chain))
+        // Block times from a light server that is wrong, or lying: 22 days ahead.
+        let ahead = chain + 22 * 86_400
+
+        // Rotation on that time alone drops the prekeys an invite was made from, and the
+        // invite's first message can't be read any more.
+        let bob = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let lostInvite = try bob.createInvite(myAddress: Data("utest1bob".utf8))
+        #expect(try bob.rotatePrekeysIfDue(now: ahead))
+        let alice = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let lost = try alice.startFromInvite(invite: lostInvite, myAddress: Data("utest1alice".utf8), firstText: "hi")
+        #expect(try lost.memos.compactMap { try bob.receive(memo: $0, now: chain) }.isEmpty)
+
+        // What the app does: the two clocks don't agree, so nothing is rotated or dropped, and
+        // the invite still opens its chat.
+        let carol = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let keptInvite = try carol.createInvite(myAddress: Data("utest1carol".utf8))
+        #expect(ChainClock.agreed(chain: ahead, phone: phone) == nil)
+        if let agreed = ChainClock.agreed(chain: ahead, phone: phone) {
+            _ = try carol.rotatePrekeysIfDue(now: agreed)
+        }
+        let dave = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let kept = try dave.startFromInvite(invite: keptInvite, myAddress: Data("utest1dave".utf8), firstText: "hi")
+        #expect(try kept.memos.compactMap { try carol.receive(memo: $0, now: chain) }.count == 1)
+    }
+}
+
+struct FirstReplyTests {
+    @Test func aChatWaitsForItsFirstReply() {
+        let peer = Data(repeating: 7, count: 32)
+        // Messages that only went out, in a block or not: still waiting for a first reply.
+        var thread = [ChatMessage.outgoing("hi", to: peer, memos: 1),
+                      ChatMessage.outgoing("anyone there?", to: peer, memos: 1)]
+        thread[0].status = .delivered
+        #expect(FirstReply.isWaiting(thread))
+        // One message read from the contact ends the wait, wherever it is in the thread.
+        thread.append(ChatMessage.incoming("here", from: peer))
+        #expect(!FirstReply.isWaiting(thread))
+        #expect(!FirstReply.isWaiting([ChatMessage.incoming("first", from: peer)] + thread))
     }
 }
 

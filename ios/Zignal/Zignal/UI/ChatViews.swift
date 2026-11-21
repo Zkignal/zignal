@@ -29,6 +29,21 @@ struct ChatListView: View {
                 if session.walletDateNeeded {
                     WalletDateSection(session: session)
                 }
+                if session.clocksDisagree {
+                    Section {
+                        Label("This phone's date and the network's time don't match",
+                              systemImage: "exclamationmark.triangle")
+                    } footer: {
+                        Text("They are more than a day apart. Until that's fixed, messages you send may not arrive and new invites can't be made. Check Date & Time in the Settings app. If the phone's date is right, the server may be wrong: choose another one under Network.")
+                    }
+                }
+                if session.cameBackWithoutChats {
+                    Section {
+                        Label("This profile came back without its chats", systemImage: "arrow.counterclockwise")
+                    } footer: {
+                        Text("A recovery phrase brings back the wallet and your identity, not chats. To reach a contact again, one of you scans a new invite from the other. If your contact scans yours, their app asks to start the chat over.")
+                    }
+                }
                 WalletSection(session: session)
                 if session.contacts.isEmpty {
                     ContentUnavailableView {
@@ -128,6 +143,7 @@ struct ConversationView: View {
 
     var body: some View {
         let thread = session.messages(with: peer)
+        let waitingForReply = FirstReply.isWaiting(thread)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
@@ -135,7 +151,8 @@ struct ConversationView: View {
                         MessageBubble(message: message, showsStatus: !isDemo,
                                       checking: InterruptedSends.isBeingChecked(
                                           message, checked: session.checkedInterruptedSends),
-                                      checkTakingLong: session.checkTakingLong) {
+                                      checkTakingLong: session.checkTakingLong,
+                                      waitingForReply: waitingForReply) {
                             Task { await session.retry(message.id) }
                         }
                         .id(message.id)
@@ -244,6 +261,8 @@ private struct MessageBubble: View {
     let checking: Bool
     /// That check has taken longer than `ProfileSession.slowCheck`.
     let checkTakingLong: Bool
+    /// Nothing from the contact has been read in this chat yet (see `FirstReply`).
+    let waitingForReply: Bool
     let retry: () -> Void
 
     var body: some View {
@@ -292,7 +311,10 @@ private struct MessageBubble: View {
         switch message.status {
         case .sending: return "\(time), \(memos), sending"
         case .sent: return "\(time), \(memos), sent"
-        case .delivered: return "\(time), \(memos), delivered"
+        case .delivered:
+            // In a block, which is all "delivered" can mean. Say so while nothing has come back.
+            return waitingForReply ? "\(time), \(memos), sent, waiting for a first reply"
+                                   : "\(time), \(memos), delivered"
         case .failed, .received: return "\(time), \(memos)"
         }
     }

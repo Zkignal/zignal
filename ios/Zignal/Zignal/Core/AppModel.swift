@@ -24,6 +24,10 @@ final class AppModel {
 
     @ObservationIgnored private let store: ProfileStore
     @ObservationIgnored private var inBackground = false
+    /// The least time between an accepted PIN and its profile showing. Opening takes longer the
+    /// more a profile holds, and a panic unlock saves once more first; with a floor above both,
+    /// timing an unlock doesn't show which profile opened or whether a wipe ran.
+    static let minimumOpen: Duration = .milliseconds(750)
     private static let installedKey = "installed"
 
     init(store: ProfileStore = .standard()) {
@@ -141,6 +145,7 @@ final class AppModel {
                 try updateLockout()
                 return
             }
+            let accepted = ContinuousClock.now
             if wiped {
                 try DeviceSecrets.app.write(result.vault, to: .vault) // a silent wipe ran
             } else {
@@ -163,6 +168,12 @@ final class AppModel {
                 try walletSeed(profileSecret: secret)
             }.value
             let session = try await ProfileSession.open(keys: keys, store: store)
+            // Every unlock takes at least `minimumOpen` from the accepted PIN to this point.
+            let worked = accepted.duration(to: ContinuousClock.now)
+            if worked < Self.minimumOpen { try? await Task.sleep(for: Self.minimumOpen - worked) }
+            #if DEBUG
+            print("Zignal debug: unlock worked \(worked) from the accepted PIN to an open profile; shown after \(Self.minimumOpen)")
+            #endif
             show(session, walletSeed: seed)
             // After the profile is on screen, so a panic unlock (or one that finishes an
             // interrupted wipe) doesn't wait for the clean-up. (It still saves the profile files
@@ -290,6 +301,9 @@ final class AppModel {
 
     /// Locks as soon as the app goes to the background.
     func scenePhaseChanged(_ newPhase: ScenePhase) {
+        #if DEBUG
+        Clipboard.debugLog("scene phase \(newPhase)")
+        #endif
         inBackground = newPhase == .background
         if inBackground { lock(clearingClipboard: false) }
     }
