@@ -24,7 +24,7 @@ the same commit.
   made, and the chat list says that the phone's date and the network's time don't match.
   Messages still go out on the chain's time, so the notice says they may not arrive. If both
   clocks are wrong the same way, clean-up runs as before. Found by a November 20 review.
-  2 new tests.
+  2 new tests. (`331e76a`)
 - **Zignal's copy is cleared at the next unlock after a trip to the Home Screen.** In an
   iPhone test on November 19, an invite copied in one profile could still be pasted in the
   other after going to the Home Screen and unlocking with the other PIN. An iPhone test on
@@ -34,13 +34,13 @@ the same commit.
   clear the pasteboard whenever Zignal's last copy may still be there, within its 60
   seconds, whatever the count says. So something copied elsewhere within those seconds is
   cleared too. Going to the background still keeps the copy, so it can be pasted into
-  another app. 2 tests changed.
+  another app. 2 tests changed. (`331e76a`)
 - **Every unlock takes at least 0.75 seconds from the accepted PIN to the profile showing.**
   Opening a profile takes longer the more it holds, and a panic unlock saves the profile
   files once more, so the time an unlock took could hint at which profile opened or that a
   wipe ran. The minimum covers both as long as opening stays under it. That hasn't been
   measured on an iPhone with a large profile yet; Debug builds print the time. From a
-  November 18 review.
+  November 18 review. (`331e76a`)
 
 ### Fixed
 - **A chat's first messages say "sent, waiting for a first reply", not "delivered".**
@@ -48,7 +48,7 @@ the same commit.
   read in a chat, that doesn't show their phone could read it: an invite that was used
   before, both people scanning each other's invite, and an invite from a profile restored
   since all look the same from this phone. After the first reply, messages say "delivered"
-  as before. From a November 18 review. 1 new test.
+  as before. From a November 18 review. 1 new test. (`331e76a`)
 - **A profile whose file isn't on the phone asks when its wallet was created.** A profile's
   file holds its wallet's date, and phone backups never hold that file, so after a backup was
   restored a profile opened empty and its wallet started at the chain tip: its funds looked
@@ -72,7 +72,7 @@ the same commit.
   keep sending on the old chats: their messages show "delivered" there and can't be read
   here. Until the profile has a contact, its chat list now says that one of the two has to
   scan a new invite from the other (a contact who scans is asked to start the chat over).
-  From a restore test on November 20.
+  From a restore test on November 20. (`331e76a`)
 - **Restore from a block height or a date.** The restore screen and the question above take a
   block height, a date picked on a wheel, or both; with both, scanning starts from the earlier
   one. A height must be a whole number from 419,200 (Sapling) up and not past the chain's
@@ -97,6 +97,10 @@ the same commit.
   No code changes. (`5bb6e53`)
 
 ### Documentation
+- README: screenshots of the restore screen (which profile comes back, a block height or a
+  date), of a restored profile's notice on its chat list, and of the warning before a chat
+  starts over, as the contact sees it. Only their pixels: no EXIF, colour profile or other
+  hidden data, and no status bar.
 - README, CHANGELOG, SECURITY.md and the SDK's `ZIGNAL-PATCHES.md` no longer depend on the
   branch they are read on: the Zecathon submission is named by its tag (`zecathon-final`),
   `main` is described as holding tagged releases of `dev`, the README's "This branch
@@ -108,7 +112,7 @@ the same commit.
   newest scanned block's time); tests through November 20; `basic-toml` and `bincode` 1.3.3
   in `zkw-ffi` marked unmaintained; what Debug builds print; the camera staying on after a
   scan until the Add contact screen closes, and turning off camera access when not scanning;
-  and the commits of the license change and the restore changes.
+  and the commits of the license change and the restore changes. (`331e76a`)
 - README, from the November 18 reviews: what a restored phone backup brings back; an edited
   copy of a used invite isn't recognized as used; a server may link a wallet's syncs by where
   each one resumes; about 106 guesses a day with the wrong-PIN wait, not 100; the primitives'

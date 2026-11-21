@@ -30,7 +30,7 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | |
+| Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | `331e76a` |
 | Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | `4679be2` |
 | Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (the tags `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | `5bb6e53` |
 | Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | `1341797` |
@@ -140,6 +140,23 @@ Bottom right: a new invite from someone who is already a contact. Add contact wa
 sending starts the chat over, so messages sent on the old chat may not arrive, and to do it
 only if the contact made the invite just now; the button says Start over and asks once
 more. Taken on the Simulator in dark mode on November 17, so it shows the newer fee text.
+
+<p>
+  <img src="pics/16-Recovery-Warning.png" width="200" alt="Restore: restoring isn't advised, and the choice of the PIN 1 profile, the PIN 2 profile or both">
+  <img src="pics/17-Recovery-Warning-Pin1Pin2Both.png" width="200" alt="Restore both profiles: one recovery phrase field for each">
+  <img src="pics/18-Recovery-Date-Height.png" width="200" alt="Restore: scanning starts from a block height or a date">
+</p>
+<p>
+  <img src="pics/19-Rec-Profile-Chats-Notification.png" width="200" alt="A restored profile's chat list: it came back without its chats">
+  <img src="pics/20-Scanners-Phone-Notification.png" width="300" alt="Add contact on the contact's iPhone: a new invite from an existing contact asks before the chat starts over">
+</p>
+
+Restoring, after the changes of November 19 to 21. Top row, on the Simulator: the restore
+screen says in red that restoring isn't advised and asks which profile comes back (PIN 1,
+PIN 2 or both); with Both, each profile gets its own phrase field; scanning starts from a
+block height or a date. Bottom left: a restored profile's chat list says it came back
+without its chats and how to reach contacts again. Bottom right, on an iPhone: the contact
+scans the restored profile's new invite and is asked before the chat starts over.
 
 ## What works today
 
@@ -858,6 +875,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-19 | `1341797` | `dev`: copies expire after 60 seconds; Share invite and Share address |
 | 2026-11-21 | `5bb6e53` | `dev`: license: AGPL-3.0-only from this commit (was MIT or Apache-2.0) |
 | 2026-11-21 | `4679be2` | `dev`: restore from a block height or a date, for the real profile, the decoy or both; a failed save leaves the chat as it was |
+| 2026-11-21 | `331e76a` | `dev`: clean-up waits until both clocks agree; the next unlock clears Zignal's copy; a first message waits for a reply |
 
 ## Credits
 
