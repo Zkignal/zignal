@@ -13,6 +13,14 @@ the same commit.
 ## 2026-11-21
 
 ### Security
+- **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't
+  on the phone, and Restore defaults in the network settings now start with Tor on: the
+  server sees a Tor exit instead of the phone's IP address when messages are sent and
+  fetched. Blocks, tree states and subtree roots still download directly. Tor was off by
+  default before, and a profile saved nothing about it until its settings were changed, so a
+  profile made before keeps the setting it had (Tor off unless it was turned on); it can be
+  turned on under Network. New profiles now save their network settings. 2 new tests, 2
+  changed.
 - **Clean-up that can't be undone waits until the chain's time and the phone's clock
   agree.** Since November 19 the app's clock is the time in the newest block the wallet has
   scanned, and block times come from the light server. A server reporting times 22 or more
@@ -100,7 +108,7 @@ the same commit.
 - README: screenshots of the restore screen (which profile comes back, a block height or a
   date), of a restored profile's notice on its chat list, and of the warning before a chat
   starts over, as the contact sees it. Only their pixels: no EXIF, colour profile or other
-  hidden data, and no status bar.
+  hidden data, and no status bar. (`605c99a`)
 - README, CHANGELOG, SECURITY.md and the SDK's `ZIGNAL-PATCHES.md` no longer depend on the
   branch they are read on: the Zecathon submission is named by its tag (`zecathon-final`),
   `main` is described as holding tagged releases of `dev`, the README's "This branch

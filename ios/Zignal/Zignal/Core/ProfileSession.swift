@@ -90,7 +90,7 @@ final class ProfileSession {
         walletCreated = loaded.data.walletCreated
         walletDateNeeded = loaded.data.walletDateNeeded ?? false
         recoveryPhraseShown = loaded.data.recoveryPhraseShown ?? false
-        walletSettings = loaded.data.walletSettings ?? .standard
+        walletSettings = loaded.data.walletSettings ?? .savedBeforeTorDefault
         walletRestored = loaded.data.walletRestored ?? false
         walletStartHeight = loaded.data.walletStartHeight
         processedTransactions = loaded.data.processedTransactions ?? []
@@ -128,9 +128,11 @@ final class ProfileSession {
                                       restored: Bool = false,
                                       startHeight: Int? = nil) throws -> ProfileData {
         let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
+        // A new profile saves its wallet settings, Tor on (`WalletSettings.standard`): a file
+        // without them is from before Tor was on by default and keeps Tor off.
         return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
                            walletCreated: walletCreated, walletRestored: restored ? true : nil,
-                           walletStartHeight: startHeight)
+                           walletSettings: WalletSettings.standard, walletStartHeight: startHeight)
     }
 
     /// Opens a profile. Decrypting it, restoring its inbox and re-sealing every profile file
@@ -719,7 +721,7 @@ final class ProfileSession {
                                walletCreated: walletCreated,
                                recoveryPhraseShown: recoveryPhraseShown,
                                walletRestored: walletRestored ? true : nil,
-                               walletSettings: walletSettings == .standard ? nil : walletSettings,
+                               walletSettings: walletSettings,
                                processedTransactions: processedTransactions,
                                preparedNoteValue: preparedNoteValue,
                                wipePending: wipePending, wipeCleanPasses: wipeCleanPasses,
@@ -789,8 +791,10 @@ private struct LoadedProfile: @unchecked Sendable {
         } else {
             // No file for this profile on this device (for example after restoring a device
             // backup, which never contains chat state). Start with an empty inbox, and ask when
-            // the wallet was created before it starts: its own file held that date.
-            data = ProfileData(inbox: Data(), walletRestored: true, walletDateNeeded: true)
+            // the wallet was created before it starts: its own file held that date. Its wallet
+            // settings were in that file too, so it starts with the new-profile ones (Tor on).
+            data = ProfileData(inbox: Data(), walletRestored: true,
+                               walletSettings: WalletSettings.standard, walletDateNeeded: true)
             inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
             demo = nil
         }

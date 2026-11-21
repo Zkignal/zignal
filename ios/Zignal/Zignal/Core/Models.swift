@@ -17,7 +17,8 @@ struct ProfileData: Codable, Equatable {
     /// True when this profile came from a recovery phrase: its wallet scans from
     /// `walletCreated` instead of starting at the current chain height.
     var walletRestored: Bool?
-    /// Server and Tor choices for this profile's wallet. Nil means the defaults.
+    /// Server and Tor choices for this profile's wallet. Saved in every profile made since
+    /// Tor is on by default; nil in an older file means `WalletSettings.savedBeforeTorDefault`.
     var walletSettings: WalletSettings?
     /// Wallet transactions whose memos have already been read, oldest first. Lets every sync
     /// pick up exactly the transactions it hasn't seen yet, in whatever order they're found.

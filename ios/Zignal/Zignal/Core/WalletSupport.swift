@@ -45,8 +45,16 @@ struct WalletSettings: Codable, Equatable, Sendable {
         Server(host: "zec-node.cakewallet.com", port: 443),
     ]
 
-    /// Tor starts off (faster, more reliable start); the user can turn it on in Network.
-    static let standard = WalletSettings(servers: defaultServers, torEnabled: false)
+    /// What a new profile starts with: Tor on, so the server sees a Tor exit instead of this
+    /// phone's IP address when messages are sent and fetched (blocks still download directly).
+    /// Turning it off in Network makes the wallet start faster. Saved in every new profile's
+    /// file (`ProfileSession.emptyData`), and what "Restore defaults" puts back.
+    static let standard = WalletSettings(servers: defaultServers, torEnabled: true)
+
+    /// What a profile file without wallet settings means. Before Tor was on by default, Tor
+    /// started off and a profile saved nothing until its settings were changed, so such a
+    /// profile keeps Tor off, as it had, until the user turns it on.
+    static let savedBeforeTorDefault = WalletSettings(servers: defaultServers, torEnabled: false)
 }
 
 extension ProfileKeyset {

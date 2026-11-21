@@ -41,10 +41,11 @@ with a tag. The Zecathon submission stays at the tag `zecathon-final`.
 
 The README's [Security notes and known limitations](README.md#security-notes-and-known-limitations)
 lists what Zignal doesn't protect against yet: for example, one 24-word phrase is both the
-wallet seed and the messaging identity, Tor is off by default, and the fee shows how many
-memos a transaction carries. Also known: the address inside an invite isn't signed, so a
-tampered invite can block a chat (it can't read or forge messages). These aren't treated as
-new vulnerabilities, unless you find a way to make them worse.
+wallet seed and the messaging identity, Tor (on for new profiles) doesn't cover syncing,
+and the fee shows how many memos a transaction carries. Also known: the address inside an
+invite isn't signed, so a tampered invite can block a chat (it can't read or forge
+messages). These aren't treated as new vulnerabilities, unless you find a way to make them
+worse.
 
 ## Testing rules
 

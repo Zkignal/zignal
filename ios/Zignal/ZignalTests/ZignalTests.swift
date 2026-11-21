@@ -1358,8 +1358,11 @@ struct WalletSettingsTests {
         #expect(WalletSettings.Server(text) == nil)
     }
 
-    @Test func defaultsHaveTorOffAndKnownServers() {
-        #expect(!WalletSettings.standard.torEnabled)
+    @Test func newProfilesHaveTorOnAndKnownServers() {
+        #expect(WalletSettings.standard.torEnabled)
+        // A profile file without wallet settings is from before Tor was on by default: Tor off.
+        #expect(!WalletSettings.savedBeforeTorDefault.torEnabled)
+        #expect(WalletSettings.savedBeforeTorDefault.servers == WalletSettings.standard.servers)
         #expect(WalletSettings.standard.servers.first == WalletSettings.Server(host: "zec.rocks", port: 443))
         #expect(WalletSettings.standard.servers.allSatisfy { WalletSettings.Server($0.label) == $0 })
     }
@@ -1737,13 +1740,15 @@ struct WalletShutdownTests {
 
 @MainActor
 struct WalletSessionTests {
-    @Test func settingsPersistAndDefaultsStayUnwritten() async throws {
+    @Test func settingsPersistAndNewProfilesSaveTorOn() async throws {
         let store = try makeTempStore()
         let keys = try ProfileKeyset(secret: secureRandom(32))
         try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+        #expect(try store.load(keys)?.walletSettings == WalletSettings.standard)
 
         let session = try await ProfileSession.open(keys: keys, store: store)
         #expect(session.walletSettings == .standard)
+        #expect(session.walletSettings.torEnabled)
         let own = WalletSettings(servers: [.init(host: "lwd.example.net", port: 9067)], torEnabled: true)
         await session.updateWalletSettings(own)
         #expect(try store.load(keys)?.walletSettings == own)
@@ -1751,10 +1756,42 @@ struct WalletSessionTests {
         #expect(reopened.walletSettings == own)
 
         await reopened.updateWalletSettings(.standard)
-        #expect(try store.load(keys)?.walletSettings == nil)
+        #expect(try store.load(keys)?.walletSettings == WalletSettings.standard)
         // An empty server list is never saved.
         await reopened.updateWalletSettings(WalletSettings(servers: [], torEnabled: true))
         #expect(reopened.walletSettings == .standard)
+    }
+
+    /// A profile saved before Tor was on by default has no wallet settings in its file. It keeps
+    /// Tor off, as it had, and its choice is saved from then on; turning Tor on still works.
+    @Test func aProfileFromBeforeKeepsTorOff() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        var older = try ProfileSession.emptyData(keys: keys)
+        older.walletSettings = nil
+        try store.reset(with: [(older, keys)])
+
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletSettings == .savedBeforeTorDefault)
+        #expect(!session.walletSettings.torEnabled)
+        // Whatever the file holds now (nothing, or the setting it had), it still means Tor off.
+        let saved = try store.load(keys)?.walletSettings ?? .savedBeforeTorDefault
+        #expect(!saved.torEnabled)
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(!reopened.walletSettings.torEnabled)
+
+        await reopened.updateWalletSettings(.standard)
+        #expect(try store.load(keys)?.walletSettings?.torEnabled == true)
+    }
+
+    /// A profile whose file isn't on the phone starts again with the new-profile settings: its
+    /// old choice was in that file.
+    @Test func aProfileWithoutItsFileStartsWithTorOn() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletSettings == .standard)
+        #expect(try store.load(keys)?.walletSettings == WalletSettings.standard)
     }
 
     @Test func restoredFlagIsSavedOnlyForRestoredProfiles() async throws {

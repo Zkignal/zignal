@@ -30,6 +30,7 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | |
 | Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | `331e76a` |
 | Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | `4679be2` |
 | Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (the tags `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | `5bb6e53` |
@@ -78,7 +79,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-131 app tests and 2 UI tests pass.
+133 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -288,8 +289,8 @@ that's on the roadmap.
   contact's phone could read the message: until a first reply has been read in a chat, its
   messages say "sent, waiting for a first reply".
 - **Servers:** public lightwalletd servers by default (zec.rocks, Stardust and Cake Wallet;
-  only the first is used), editable in the app, including your own. Tor is off by default
-  and can be switched on per profile.
+  only the first is used), editable in the app, including your own. Tor is on by default
+  for new profiles and can be switched off per profile.
 - **Sapling parameters** are bundled in the app and checked against pinned hashes at build
   time, so the app never downloads them.
 - **NU7:** the SDK's Rust library is built from source on librustzcash's NU7 releases, so the
@@ -427,19 +428,22 @@ Zcash hides sender, recipient and amount on chain. Who connects to the server, f
 address and when, is a separate problem, and the app can only solve part of it.
 
 **What the server sees**
-- **Tor off (the default):** the server you use sees your IP address with every request:
+- **Tor off:** the server you use sees your IP address with every request:
   the transactions you send, the ones it fetches for you to read messages, and the blocks you
   download. One server operator often sees the sender's IP address submit a transaction and
   the recipient's IP address fetch it, which shows who writes to whom and when, even though
   the messages stay encrypted.
-- **Tor on (in the network settings):** sending, fetching transactions, checking the server
-  and reading the chain tip go over Tor, so the server sees a Tor exit instead of your IP
-  address. Syncing still connects directly: downloading blocks, tree states and subtree
-  roots, which are the same for every wallet. The server learns that you use Zcash and when
-  you sync. It doesn't see your IP address on the transactions the wallet fetches over Tor,
-  but it may link them to your sync by timing: the wallet fetches them right after it has
-  downloaded, directly, the blocks that hold them. On a quiet server, or after a long time
-  offline, such a fetch can stand out. Tor depends on no single company, but it's slower.
+- **Tor on (the default for new profiles):** sending, fetching transactions, checking the
+  server and reading the chain tip go over Tor, so the server sees a Tor exit instead of
+  your IP address. Syncing still connects directly: downloading blocks, tree states and
+  subtree roots, which are the same for every wallet. The server learns that you use Zcash
+  and when you sync. It doesn't see your IP address on the transactions the wallet fetches
+  over Tor, but it may link them to your sync by timing: the wallet fetches them right after
+  it has downloaded, directly, the blocks that hold them. On a quiet server, or after a long
+  time offline, such a fetch can stand out. Tor depends on no single company, but it's
+  slower.
+- **Profiles made by earlier versions** keep the setting they had: Tor off unless it was
+  turned on. Turn it on under Network.
 - **No wallet identifier:** until November 12, the wallet also sent all of its transparent
   addresses on every sync, directly even with Tor on, which let the server recognize the
   same wallet across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only
@@ -540,7 +544,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 131 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 133 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -554,12 +558,13 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     profile files, and a wipe counted finished only after two clean unlocks;
   - recovery phrases, and the demo chat across restarts;
   - payment request encoding and address checks, invite parsing against a real invite from
-    the core, copying an invite as text and removing only Zignal's own copy at lock,
+    the core, copying an invite as text and clearing it at lock and at the next unlock,
     refusing an invite used before, and asking before a chat with an existing contact
     starts over;
-  - memo filtering, wallet settings and messages, the default servers, where a restore
-    starts scanning, waiting for stopped wallets and for settings changes, and removing the
-    SDK's old entries from the app's preferences;
+  - memo filtering, wallet settings and messages (Tor on for a new profile, kept as it was
+    for one saved by an earlier version), the default servers, where a restore starts
+    scanning, waiting for stopped wallets and for settings changes, and removing the SDK's
+    old entries from the app's preferences;
   - when Prepare splits or waits; interrupted sends found in the wallet, sent again as the same
     transaction and shown as "Checking" until the wallet has looked (saying so when that
     takes long); and reading a chat's first message before the rest;
@@ -587,11 +592,12 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   November 2026; what they found is fixed, listed below, or planned.
 - **On chain:** Zcash shielded transactions hide sender, recipient and amount. Your IP address
   and timing are a separate problem.
-- **Network privacy:** with Tor off (the default), the server you use sees your IP address
-  and which transactions are yours: the ones you send and the ones it fetches for you to read.
-  That links who messaged when to an IP, even though the contents stay encrypted. The Zcash
-  SDK's Tor covers sending and fetching; syncing (blocks, tree states, subtree roots) still
-  connects directly, and the wallet sends no transparent addresses at all. Your own
+- **Network privacy:** with Tor off, the server you use sees your IP address and which
+  transactions are yours: the ones you send and the ones it fetches for you to read. That
+  links who messaged when to an IP, even though the contents stay encrypted. Tor is on for
+  new profiles; a profile made by an earlier version keeps the setting it had. The
+  Zcash SDK's Tor covers sending and fetching; syncing (blocks, tree states, subtree roots)
+  still connects directly, and the wallet sends no transparent addresses at all. Your own
   server removes the third party entirely. A VPN with a kill switch and a no-logs provider,
   together with Tor, covers the rest (see
   [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
@@ -650,7 +656,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
 - **Remaining RustSec advisories** in the SDK's dependencies (checked November 17, 2026):
-  - through arti (the Tor client, off by default), with no compatible fix yet: `rsa`
+  - through arti (the Tor client, on for new profiles), with no compatible fix yet: `rsa`
     (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
     only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; used for SSH key
     parsing for onion services, which Zignal doesn't use);
@@ -672,8 +678,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
   (November 3, 2026) fixes several low-severity security issues, but librustzcash's NU7
   releases pin arti 0.43, so an update needs a new librustzcash release. Requested upstream in
-  [zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246). Tor is off by
-  default.
+  [zcash/librustzcash#3246](https://github.com/zcash/librustzcash/issues/3246). Tor is on by
+  default for new profiles now, so this update matters more.
 - **Open app only:** messages arrive while the app is unlocked and synced. There are no push
   notifications, which would need a Zignal server.
 - **Cost and delay:** each message costs a normal network fee and arrives after about one block
@@ -876,6 +882,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-21 | `5bb6e53` | `dev`: license: AGPL-3.0-only from this commit (was MIT or Apache-2.0) |
 | 2026-11-21 | `4679be2` | `dev`: restore from a block height or a date, for the real profile, the decoy or both; a failed save leaves the chat as it was |
 | 2026-11-21 | `331e76a` | `dev`: clean-up waits until both clocks agree; the next unlock clears Zignal's copy; a first message waits for a reply |
+| 2026-11-21 | `605c99a` | `dev`: README screenshots of the restore screens and of a restored profile's notice |
 
 ## Credits
 

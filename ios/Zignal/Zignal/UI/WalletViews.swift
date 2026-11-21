@@ -203,7 +203,7 @@ struct WalletSettingsView: View {
                 Section {
                     Toggle("Use Tor", isOn: $torEnabled)
                 } footer: {
-                    Text("Off by default. The server you use can see your IP address. With Tor on, it can't for sending and fetching messages, but downloading blocks still connects directly, and the wallet starts more slowly. Your own server hides it completely.")
+                    Text("On for new profiles. The server you use can see your IP address. With Tor on, it can't for sending and fetching messages, but downloading blocks still connects directly. With Tor off, the wallet starts faster. Your own server hides it completely.")
                 }
                 Section {
                     ForEach(servers, id: \.self) { server in
