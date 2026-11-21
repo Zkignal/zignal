@@ -9,6 +9,18 @@ its entry here in the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-21
+
+### Repository
+- **License: AGPL-3.0-only from this commit.** Zignal's own code (everything except
+  `vendor/`) was under the MIT license or the Apache License 2.0. `LICENSE` now holds the GNU
+  Affero General Public License, version 3; `LICENSE-MIT` and `LICENSE-APACHE` are removed,
+  and the two Rust crates' `license` fields say `AGPL-3.0-only`. Whoever shares Zignal's
+  code, changed or not, must pass on their source under the same license. Versions already
+  published (`main`, `nu7`, the tags `zecathon-final` and `zecathon-nu7`, and `dev` up to
+  `1341797`) stay under MIT or Apache-2.0. The SDK in `vendor/` keeps its MIT license. No code
+  changes.
+
 ## 2026-11-19
 
 ### Security

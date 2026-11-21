@@ -29,6 +29,7 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (`main`, `nu7`, `dev` up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | |
 | Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | |
 | Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | `319bc3e` |
 | Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
@@ -808,8 +809,31 @@ libraries:
 
 ## License
 
-Zignal's own code is dual-licensed under either of:
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+Zignal's own code (everything in this repository except `vendor/`) is licensed under the GNU
+Affero General Public License, version 3 only (`AGPL-3.0-only`): see [LICENSE](LICENSE).
 
-at your option. `vendor/zcash-swift-wallet-sdk/` keeps its own MIT license.
+```text
+Zignal: end-to-end encrypted messaging carried inside Zcash shielded transactions
+Copyright (C) 2026 The Zignal authors
+
+This program is free software: you can redistribute it and/or modify it under the terms of
+the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+the GNU Affero General Public License for more details.
+```
+
+- **In short** (the license itself is what counts): anyone may use, study, change and share
+  this code. Whoever shares it, changed or not, must pass on the source under this same
+  license; whoever lets people use a changed version over a network must offer them its
+  source too.
+- **`vendor/zcash-swift-wallet-sdk/`** keeps its own MIT license, Zignal's changes to it
+  included.
+- **Earlier versions:** `main`, `nu7`, the tags `zecathon-final` and `zecathon-nu7`, and `dev`
+  up to `1341797` were published under the MIT license or the Apache License 2.0, at your
+  option, and stay under those terms. Their license files are in the repository's history.
+- **Other terms:** the Zignal authors can also release Zignal's own code under other terms,
+  and do so for any build they distribute through Apple (TestFlight, the App Store). Code
+  from other people can be added only under an agreement that keeps this possible. There
+  isn't one yet, so please open an issue before sending code.
