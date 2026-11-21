@@ -55,7 +55,7 @@ final class WalletEngine {
 
     @ObservationIgnored private let seed: [UInt8]
     @ObservationIgnored private let alias: String
-    @ObservationIgnored private let restoreFrom: Date?
+    @ObservationIgnored private let restoreFrom: RestorePoint?
     @ObservationIgnored private var synchronizer: SDKSynchronizer?
     @ObservationIgnored private var account: Account?
     @ObservationIgnored private var subscriptions: Set<AnyCancellable> = []
@@ -64,9 +64,9 @@ final class WalletEngine {
     /// - Parameters:
     ///   - seed: the profile's 64-byte BIP-39 wallet seed.
     ///   - alias: names this profile's wallet files; derived from the profile key.
-    ///   - restoreFrom: for a profile restored from its phrase, about when the wallet was
-    ///     created. Nil for a new wallet, which starts at the current chain height.
-    init(seed: Data, alias: String, settings: WalletSettings, restoreFrom: Date?) {
+    ///   - restoreFrom: for a restored profile, the date and block height entered (see
+    ///     `WalletStart`). Nil for a new wallet, which starts at the current chain height.
+    init(seed: Data, alias: String, settings: WalletSettings, restoreFrom: RestorePoint?) {
         self.seed = [UInt8](seed)
         self.alias = alias
         self.settings = settings
@@ -98,7 +98,9 @@ final class WalletEngine {
             )
             let sync = SDKSynchronizer(initializer: initializer)
             synchronizer = sync
-            let birthday = restoreFrom.map { sync.estimateBirthdayHeight(for: RestoreStart.date(for: $0)) }
+            let birthday = restoreFrom.map { point in
+                WalletStart.birthday(for: point) { sync.estimateBirthdayHeight(for: $0) }
+            }
             let result = try await sync.prepare(with: seed, walletBirthday: birthday, name: "Zignal", keySource: nil)
             guard synchronizer === sync else { return } // locked while preparing
             guard result == .success, let first = try await sync.listAccounts().first else {

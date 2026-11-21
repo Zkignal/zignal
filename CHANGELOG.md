@@ -11,6 +11,38 @@ its entry here in the same commit.
 
 ## 2026-11-21
 
+### Fixed
+- **A profile whose file isn't on the phone asks when its wallet was created.** A profile's
+  file holds its wallet's date, and phone backups never hold that file, so after a backup was
+  restored a profile opened empty and its wallet started at the chain tip: its funds looked
+  gone. The profile still opens empty (chats can't come back), and above the wallet it asks
+  for the wallet's block height or the date it was created; the wallet starts once one is
+  given (or neither: October 1, 2026) and looks for its funds from there. Found by a
+  November 18 review. 2 new tests.
+- **A restore with nothing entered starts at October 1, 2026, not today.** A restore that kept
+  the screen's date scanned from the day before and didn't show funds received earlier. No
+  wallet made in Zignal is older than October 2026; an earlier date can still be picked.
+  1 new test.
+- **A message or a chat start that couldn't be saved leaves the chat as it was.** The chat's
+  keys moved on before the save, so when saving failed (a full disk, say) the next message
+  went out on keys the contact didn't expect, or, after "Start over", on a chat the contact
+  never got, until the app locked. The chat is now put back the way it was. Found by two
+  November 18 reviews. 1 new test.
+
+### Added
+- **Restore from a block height or a date.** The restore screen and the question above take a
+  block height, a date picked on a wheel, or both; with both, scanning starts from the earlier
+  one. A height must be a whole number from 419,200 (Sapling) up and not past the chain's
+  end; the wallet starts one block before it, so funds in that very block are found. The
+  restore screen says in red that restoring isn't advised: Zignal is meant to start with new
+  profiles, and the panic PIN can't erase a copy of the words kept in another app. Both
+  screens say in red that only funds from that point on show. 2 new tests.
+- **Restore the real profile, the decoy, or both.** The restore screen asks which messenger
+  profile to bring back: PIN 1 (the unlock PIN, the real profile), PIN 2 (the duress PIN, the
+  decoy), or both, each from its own 24 words. A profile that isn't restored starts new; the
+  same phrase for both is refused. Before, a phrase always became the real profile and the
+  decoy always started new. Chats don't come back. 2 new tests.
+
 ### Repository
 - **License: AGPL-3.0-only from this commit.** Zignal's own code (everything except
   `vendor/`) was under the MIT license or the Apache License 2.0. `LICENSE` now holds the GNU
@@ -20,6 +52,14 @@ its entry here in the same commit.
   published (`main`, `nu7`, the tags `zecathon-final` and `zecathon-nu7`, and `dev` up to
   `1341797`) stay under MIT or Apache-2.0. The SDK in `vendor/` keeps its MIT license. No code
   changes.
+
+### Documentation
+- README, from the November 18 reviews: what a restored phone backup brings back; an edited
+  copy of a used invite isn't recognized as used; a server may link a wallet's syncs by where
+  each one resumes; about 106 guesses a day with the wrong-PIN wait, not 100; the primitives'
+  crates are no longer all called audited; the tests need an iOS 27 Simulator or iPhone;
+  `bincode` and `paste` in the SDK are marked unmaintained; the test list. A comment in the
+  privacy manifest no longer names a script that isn't in the repository.
 
 ## 2026-11-19
 
@@ -35,7 +75,7 @@ its entry here in the same commit.
   Screen (the cause isn't known yet); the Lock button removes it, and iOS removes it after 60
   seconds. Share invite and Share address send an invite or an address straight to the app
   picked, without the pasteboard; the share sheet has no Copy. Found by two November 18
-  reviews. 3 new tests.
+  reviews. 3 new tests. (`1341797`)
 
 ### Fixed
 - **Messages and invites run on the chain's clock, not the phone's date.** The sending

@@ -55,6 +55,23 @@ extension ProfileKeyset {
     var walletAlias: String { subkeyBytes(KeyLabel.walletAlias, count: 8).hexString }
 }
 
+/// Dates the wallet-date pickers offer (restoring from a phrase, and a profile whose file wasn't
+/// on the phone).
+enum WalletDates {
+    /// Sapling activation (2018-10-29). No Zcash shielded wallet can be older.
+    static let earliest = day(2018, 10, 29)
+    /// October 1, 2026: the first Zignal wallets were made in October 2026, so no wallet made in
+    /// Zignal is older. The pickers start here, which is safe for every Zignal wallet; a later
+    /// date only makes the first sync faster.
+    static let zignalFirst = day(2026, 10, 1)
+
+    /// Midnight in the phone's time zone, so the pickers show this very day.
+    private static func day(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        Calendar(identifier: .gregorian)
+            .date(from: DateComponents(year: year, month: month, day: day)) ?? .distantPast
+    }
+}
+
 /// Where a wallet restored from its recovery phrase starts scanning.
 ///
 /// The restore screen asks only for a day, but the date it hands over keeps the time of day the
@@ -67,6 +84,94 @@ enum RestoreStart {
     static func date(for picked: Date, calendar: Calendar = .current) -> Date {
         let startOfDay = calendar.startOfDay(for: picked)
         return calendar.date(byAdding: .day, value: -1, to: startOfDay) ?? startOfDay.addingTimeInterval(-86_400)
+    }
+}
+
+/// What was entered for a restored wallet's start: a block height, a date, both or neither.
+struct RestorePoint: Equatable, Sendable {
+    var date: Date?
+    var height: Int?
+}
+
+/// The block a restored wallet starts scanning from.
+///
+/// A typed block height and a picked date can both be given. Starting too early only makes the
+/// first sync slower; starting too late misses funds. So with both, the earlier one wins, and
+/// with neither, October 1, 2026 stands in (the recovery phrase doesn't hold the wallet's real
+/// start, and no Zignal wallet is older).
+enum WalletStart {
+    /// Sapling activation: no shielded wallet can start earlier.
+    static let earliestHeight = 419_200
+    /// NU7's activation block and its time (2026-11-06 02:34 UTC). After it, a block about every
+    /// 25 seconds; used only to tell a height that can't have been mined yet.
+    static let nu7Height = 3_543_405
+    static let nu7Time = Date(timeIntervalSince1970: 1_793_932_440)
+    /// Shown in the height field as an example: a block a little before October 1, 2026.
+    static let exampleHeight = 3_500_000
+
+    enum HeightCheck: Equatable {
+        case empty, valid(Int), notANumber, tooLow, notMinedYet
+
+        /// The height to use, or nil (nothing typed, or not usable).
+        var value: Int? {
+            if case .valid(let height) = self { return height }
+            return nil
+        }
+
+        /// Nothing typed, or a height that can be used.
+        var isUsable: Bool { self == .empty || value != nil }
+
+        var message: String? {
+            switch self {
+            case .empty, .valid: return nil
+            case .notANumber: return "A block height is a whole number, like 3,500,000."
+            case .tooLow: return "Shielded Zcash wallets start at block 419,200 or later."
+            case .notMinedYet: return "That block hasn't been mined yet. Check the number, or pick a date instead."
+            }
+        }
+    }
+
+    /// Reads a typed block height. Spaces and separators between digits are ignored, and the
+    /// digits of any keyboard count (Arabic, Persian or Hindi numerals as well as 0 to 9).
+    static func check(_ text: String, now: Date = Date()) -> HeightCheck {
+        let digits = text.filter { !$0.isWhitespace && !",.'\u{066C}".contains($0) }
+        if digits.isEmpty { return .empty }
+        guard digits.count <= 9 else { return .notANumber }
+        var height = 0
+        for character in digits {
+            guard let digit = character.wholeNumberValue, (0...9).contains(digit) else {
+                return .notANumber
+            }
+            height = height * 10 + digit
+        }
+        if height < earliestHeight { return .tooLow }
+        if height > likelyTip(now: now) { return .notMinedYet }
+        return .valid(height)
+    }
+
+    /// About how far the chain has got at `now`, plus a week, so a phone clock that's a little
+    /// off never refuses a real height.
+    static func likelyTip(now: Date) -> Int {
+        let seconds = max(0, now.timeIntervalSince(nu7Time))
+        return nu7Height + Int(seconds / 25) + 7 * 3_456
+    }
+
+    /// The height handed to the SDK, which starts from its newest checkpoint at or below it.
+    /// `estimate` is the SDK's estimate of the block at a date.
+    static func birthday(for point: RestorePoint, estimate: (Date) -> Int) -> Int {
+        var candidates: [Int] = []
+        if let height = point.height {
+            // One block earlier: a checkpoint holds the chain after its block, so a wallet whose
+            // first funds came in the typed block still finds them.
+            candidates.append(max(height - 1, earliestHeight))
+        }
+        if let date = point.date {
+            candidates.append(estimate(RestoreStart.date(for: date)))
+        }
+        if candidates.isEmpty {
+            candidates.append(estimate(RestoreStart.date(for: WalletDates.zignalFirst)))
+        }
+        return candidates.min() ?? earliestHeight
     }
 }
 

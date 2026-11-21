@@ -60,8 +60,9 @@ final class AppModel {
 
     // MARK: - Setup
 
-    /// Creates the real and decoy profiles. With `restore`, the real profile comes from a
-    /// recovery phrase; chat history is never part of a phrase, so it starts empty.
+    /// Creates the real and decoy profiles. With `restore`, the real profile, the decoy or both
+    /// come from recovery phrases (see `RestoredProfile`) and a profile without one is new; chat
+    /// history is never part of a phrase, so it starts empty.
     func createProfiles(realPin: String, duressPin: String, panicPin: String,
                         restore: RestoredProfile? = nil) async {
         guard !busy else { return }
@@ -69,14 +70,20 @@ final class AppModel {
         errorText = nil
         defer { busy = false }
         do {
-            let restoredSecret = restore?.secret
-            let walletCreated = restore?.created ?? Date()
+            let restoredSecret = restore?.realSecret
+            let restoredDecoySecret = restore?.decoySecret
+            // A new wallet's date is today; a restored one keeps what was entered (see `WalletStart`).
+            let walletCreated = restore == nil ? Date() : restore?.created
+            let startHeight = restore?.height
+            let restoredReal = restoredSecret != nil
+            let restoredDecoy = restoredDecoySecret != nil
             let store = self.store
             // Argon2id (once per PIN) and writing both profiles run off the main thread.
             let (realKeys, seed) = try await Task.detached(priority: .userInitiated) {
                 let created = try VaultOps.create(realPin: realPin, duressPin: duressPin,
                                                   panicPin: panicPin,
-                                                  restoredSecret: restoredSecret)
+                                                  restoredSecret: restoredSecret,
+                                                  restoredDecoySecret: restoredDecoySecret)
                 let realKeys = try ProfileKeyset(secret: created.realSecret)
                 let decoyKeys = try ProfileKeyset(secret: created.decoySecret)
                 // Fresh device key and Secure Enclave key, and both profiles written together
@@ -85,9 +92,14 @@ final class AppModel {
                 try DeviceSecrets.app.removeAll()
                 try store.prepare()
                 try store.reset(with: [
-                    (ProfileSession.emptyData(keys: realKeys, walletCreated: walletCreated,
-                                              restored: restoredSecret != nil), realKeys),
-                    (ProfileSession.emptyData(keys: decoyKeys), decoyKeys),
+                    (ProfileSession.emptyData(keys: realKeys,
+                                              walletCreated: restoredReal ? walletCreated : Date(),
+                                              restored: restoredReal,
+                                              startHeight: restoredReal ? startHeight : nil), realKeys),
+                    (ProfileSession.emptyData(keys: decoyKeys,
+                                              walletCreated: restoredDecoy ? walletCreated : Date(),
+                                              restored: restoredDecoy,
+                                              startHeight: restoredDecoy ? startHeight : nil), decoyKeys),
                 ])
                 // The vault is stored last: if anything above fails, setup simply runs again.
                 try DeviceSecrets.app.write(created.vault, to: .vault)

@@ -548,6 +548,37 @@ struct RecoveryPhraseTests {
                                 panicPin: "731946", restoredSecret: Data(count: 16))
         }
     }
+
+    /// A phrase can be restored as the decoy profile instead: the duress PIN opens it, and the
+    /// real profile is new.
+    @Test func aRestoredSecretCanBecomeTheDecoyProfile() throws {
+        let secret = try secureRandom(32)
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471",
+                                          panicPin: "731946", restoredDecoySecret: secret)
+        #expect(created.decoySecret == secret)
+        #expect(created.realSecret != secret)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "260471").secret == secret)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "583914").secret == created.realSecret)
+    }
+
+    /// Both profiles can be restored at once, each from its own phrase. One phrase for both is
+    /// refused: it would make the real profile and the decoy the same profile.
+    @Test func bothProfilesCanBeRestoredFromTheirOwnPhrases() throws {
+        let real = try secureRandom(32)
+        let decoy = try secureRandom(32)
+        let created = try VaultOps.create(realPin: "583914", duressPin: "260471",
+                                          panicPin: "731946", restoredSecret: real,
+                                          restoredDecoySecret: decoy)
+        #expect(created.realSecret == real)
+        #expect(created.decoySecret == decoy)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "583914").secret == real)
+        #expect(try VaultOps.unlock(vault: created.vault, pin: "260471").secret == decoy)
+        #expect(throws: ZignalError.self) {
+            try VaultOps.create(realPin: "583914", duressPin: "260471",
+                                panicPin: "731946", restoredSecret: real,
+                                restoredDecoySecret: real)
+        }
+    }
 }
 
 /// Runs Argon2id (64 MiB) several times, so these take a few seconds.
@@ -1705,5 +1736,155 @@ struct WalletSessionTests {
         #expect(!prepared)
         await #expect(throws: ZignalError.self) { try await session.makeInvite() }
         #expect(try store.load(keys) == before)
+    }
+}
+
+@MainActor
+struct WalletDateTests {
+    /// After restoring a phone backup the profile's file isn't there (backups never hold it).
+    /// The profile opens empty and its wallet waits for a date, instead of starting at the
+    /// chain tip and missing the funds it has.
+    @Test func aProfileWithoutItsFileAsksForTheWalletDate() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletDateNeeded)
+        #expect(session.walletCreated == nil)
+        // Opened again before a date is picked: it still asks.
+        let again = try await ProfileSession.open(keys: keys, store: store)
+        #expect(again.walletDateNeeded)
+
+        let picked = Date(timeIntervalSince1970: 1_790_000_000)
+        await session.setWalletStart(date: picked, height: nil)
+        #expect(!session.walletDateNeeded)
+        #expect(session.walletCreated == picked)
+        let saved = try #require(try store.load(keys))
+        #expect(saved.walletRestored == true)
+        #expect(saved.walletCreated == picked)
+        #expect(saved.walletDateNeeded == nil)
+        #expect(saved.walletStartHeight == nil)
+
+        // A profile made at setup never asks.
+        let other = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: other), other)])
+        let fromSetup = try await ProfileSession.open(keys: other, store: store)
+        #expect(!fromSetup.walletDateNeeded)
+    }
+
+    /// A block height typed instead of a date is kept with the profile, and the wallet starts
+    /// from it; the date stays empty.
+    @Test func aTypedBlockHeightIsKeptWithTheProfile() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        await session.setWalletStart(date: nil, height: 3_550_000)
+        #expect(!session.walletDateNeeded)
+        #expect(session.walletStartHeight == 3_550_000)
+        let saved = try #require(try store.load(keys))
+        #expect(saved.walletRestored == true)
+        #expect(saved.walletCreated == nil)
+        #expect(saved.walletStartHeight == 3_550_000)
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(reopened.walletStartHeight == 3_550_000)
+        #expect(!reopened.walletDateNeeded)
+    }
+
+    /// With nothing entered, a restored wallet starts at October 1, 2026, never at today.
+    @Test func thePickersStartBeforeAnyZignalWallet() {
+        let first = Calendar(identifier: .gregorian)
+            .dateComponents([.year, .month, .day], from: WalletDates.zignalFirst)
+        #expect(first.year == 2026 && first.month == 10 && first.day == 1)
+        #expect(WalletDates.earliest < WalletDates.zignalFirst)
+        #expect(WalletDates.zignalFirst < Date())
+    }
+}
+
+/// Where a restored wallet starts: a typed block height, a picked date, both or neither.
+struct WalletStartTests {
+    /// A stand-in for the SDK's date estimate: a block every 75 seconds from a known checkpoint
+    /// (3,390,000, June 25, 2026).
+    private static func estimate(_ date: Date) -> Int {
+        3_390_000 + Int((date.timeIntervalSince1970 - 1_782_372_852) / 75)
+    }
+
+    private static func start(_ date: Date?, _ height: Int?) -> Int {
+        WalletStart.birthday(for: RestorePoint(date: date, height: height), estimate: estimate)
+    }
+
+    @Test func theEarlierOfHeightAndDateIsWhereScanningStarts() {
+        let oct15 = Date(timeIntervalSince1970: 1_792_022_400) // 2026-10-15 00:00 UTC
+        let fromDate = Self.estimate(RestoreStart.date(for: oct15))
+        #expect(Self.start(oct15, nil) == fromDate)
+        // A typed height: one block earlier, so funds in that very block are found.
+        #expect(Self.start(nil, 3_550_000) == 3_549_999)
+        // Both: whichever is earlier.
+        #expect(Self.start(oct15, 3_600_000) == fromDate)
+        #expect(Self.start(oct15, 3_400_000) == 3_399_999)
+        // Neither: October 1, 2026, which is before October 15.
+        let neither = Self.start(nil, nil)
+        #expect(neither == Self.estimate(RestoreStart.date(for: WalletDates.zignalFirst)))
+        #expect(neither < fromDate)
+        // Never below Sapling activation.
+        #expect(Self.start(nil, WalletStart.earliestHeight) == WalletStart.earliestHeight)
+    }
+
+    @Test func typedBlockHeightsAreCheckedBeforeUse() {
+        let now = Date(timeIntervalSince1970: 1_794_960_000) // 2026-11-18 00:00 UTC
+        #expect(WalletStart.check("", now: now) == .empty)
+        #expect(WalletStart.check("   ", now: now) == .empty)
+        #expect(WalletStart.check("3,543,405", now: now) == .valid(3_543_405))
+        #expect(WalletStart.check("3 500 000", now: now) == .valid(3_500_000))
+        #expect(WalletStart.check("3.500.000", now: now) == .valid(3_500_000))
+        #expect(WalletStart.check("12ab", now: now) == .notANumber)
+        #expect(WalletStart.check("-5", now: now) == .notANumber)
+        #expect(WalletStart.check("3'500'000", now: now) == .valid(3_500_000))
+        // Digits from other keyboards count (Arabic-Indic here); other number signs don't.
+        #expect(WalletStart.check("\u{0663}\u{0665}\u{0660}\u{0660}\u{0660}\u{0660}\u{0660}", now: now) == .valid(3_500_000))
+        #expect(WalletStart.check("\u{5341}", now: now) == .notANumber)
+        #expect(WalletStart.check("1e7", now: now) == .notANumber)
+        #expect(WalletStart.check("9999999999", now: now) == .notANumber)
+        #expect(WalletStart.check("419199", now: now) == .tooLow)
+        #expect(WalletStart.check("419200", now: now) == .valid(419_200))
+        // A typo with an extra digit is refused, not taken as a start past the chain's end.
+        #expect(WalletStart.check("35434050", now: now) == .notMinedYet)
+        #expect(WalletStart.check(String(WalletStart.exampleHeight), now: now) == .valid(WalletStart.exampleHeight))
+        #expect(WalletStart.exampleHeight < WalletStart.nu7Height)
+        #expect(WalletStart.check("35434050", now: now).message != nil)
+        #expect(WalletStart.check("", now: now).isUsable)
+        #expect(!WalletStart.check("12ab", now: now).isUsable)
+    }
+}
+
+struct InboxRollbackTests {
+    /// Sending and starting a chat seal the inbox first; when the save after the change fails,
+    /// the session puts that sealed copy back (`ProfileSession.rollBack`). The copy must bring
+    /// back the chat as it was, so the contact still reads what comes next.
+    @Test func aSealedCopyBringsBackTheChatAfterAFailedStartOver() throws {
+        let now = unixNow()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let alice = try ZkwInbox(seed: keys.identitySeed, now: now)
+        let bob = try ZkwInbox(seed: ProfileKeyset(secret: secureRandom(32)).identitySeed, now: now)
+        let first = try alice.startFromInvite(invite: try bob.createInvite(myAddress: Data("u1bob".utf8)),
+                                              myAddress: Data("u1alice".utf8), firstText: "hi")
+        for memo in first.memos { _ = try bob.receive(memo: memo, now: now) }
+
+        // "Start over" from a new invite of Bob's, whose save then fails.
+        let before = try alice.exportSealed(stateKey: keys.stateKey)
+        _ = try alice.startFromInvite(invite: try bob.createInvite(myAddress: Data("u1bob".utf8)),
+                                      myAddress: Data("u1alice".utf8), firstText: "again")
+        let restored = try ProfileSession.restoredInbox(before, keys: keys)
+
+        func readByBob(_ memos: [Data]) throws -> String? {
+            var read: String?
+            for memo in memos {
+                if case .message(_, let text)? = try bob.receive(memo: memo, now: now) { read = text }
+            }
+            return read
+        }
+        let bobId = try bob.myId()
+        // Rolled back: Bob reads it.
+        #expect(try readByBob(try restored.sendText(peer: bobId, text: "still here", now: now).memos) == "still here")
+        // Not rolled back: the chat Alice now has is one Bob never got.
+        #expect(try readByBob(try alice.sendText(peer: bobId, text: "lost", now: now).memos) == nil)
     }
 }

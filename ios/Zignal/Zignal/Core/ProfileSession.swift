@@ -16,6 +16,9 @@ final class ProfileSession {
     private(set) var messages: [ChatMessage]
     /// When this profile's wallet was created (or the date picked when restoring it).
     private(set) var walletCreated: Date?
+    /// True while this profile waits for a wallet date after its file wasn't on the phone (see
+    /// `ProfileData.walletDateNeeded` and `setWalletStart`). Its wallet doesn't start until then.
+    private(set) var walletDateNeeded: Bool
     private(set) var recoveryPhraseShown: Bool
     private(set) var walletSettings: WalletSettings
     /// Value of each note made by the last "Prepare for chatting", if any.
@@ -50,10 +53,12 @@ final class ProfileSession {
 
     @ObservationIgnored private let keys: ProfileKeyset
     @ObservationIgnored private let store: ProfileStore
-    @ObservationIgnored private let inbox: ZkwInbox
+    @ObservationIgnored private var inbox: ZkwInbox
     @ObservationIgnored private var demo: ZkwInbox?
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var walletRestored: Bool
+    /// The block height typed when restoring (see `ProfileData.walletStartHeight`).
+    private(set) var walletStartHeight: Int?
     @ObservationIgnored private var processedTransactions: [Data]
     /// Carried through every save. Set by `AppModel` before the profile opens, and cleared
     /// through `recordWipePass` (see `ProfileData.wipePending`).
@@ -64,6 +69,8 @@ final class ProfileSession {
     @ObservationIgnored private var refreshAgain = false
     /// Messages being sent again right now, so a second tap can't send them twice.
     @ObservationIgnored private var retrying: Set<UUID> = []
+    /// The wallet seed, kept only while the wallet waits for `setWalletStart`.
+    @ObservationIgnored private var deferredSeed: Data?
 
     private init(_ loaded: LoadedProfile) {
         keys = loaded.keys
@@ -73,9 +80,11 @@ final class ProfileSession {
         contacts = loaded.data.contacts
         messages = loaded.data.messages
         walletCreated = loaded.data.walletCreated
+        walletDateNeeded = loaded.data.walletDateNeeded ?? false
         recoveryPhraseShown = loaded.data.recoveryPhraseShown ?? false
         walletSettings = loaded.data.walletSettings ?? .standard
         walletRestored = loaded.data.walletRestored ?? false
+        walletStartHeight = loaded.data.walletStartHeight
         processedTransactions = loaded.data.processedTransactions ?? []
         preparedNoteValue = loaded.data.preparedNoteValue
         wipePending = loaded.data.wipePending
@@ -107,11 +116,13 @@ final class ProfileSession {
     /// Contents of a brand-new, empty profile. Used at setup for both profiles. `restored`
     /// marks a profile that came from a recovery phrase, so its wallet scans from
     /// `walletCreated` instead of starting at the current chain height.
-    nonisolated static func emptyData(keys: ProfileKeyset, walletCreated: Date = Date(),
-                                      restored: Bool = false) throws -> ProfileData {
+    nonisolated static func emptyData(keys: ProfileKeyset, walletCreated: Date? = Date(),
+                                      restored: Bool = false,
+                                      startHeight: Int? = nil) throws -> ProfileData {
         let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
         return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
-                           walletCreated: walletCreated, walletRestored: restored ? true : nil)
+                           walletCreated: walletCreated, walletRestored: restored ? true : nil,
+                           walletStartHeight: startHeight)
     }
 
     /// Opens a profile. Decrypting it, restoring its inbox and re-sealing every profile file
@@ -144,6 +155,7 @@ final class ProfileSession {
     func close() {
         isClosed = true
         demo = nil
+        deferredSeed = nil
         wallet?.stop()
         wallet = nil
     }
@@ -197,8 +209,14 @@ final class ProfileSession {
         }
         if contact.isDemo {
             do {
+                let before = try inboxBefore()
                 let out = try inbox.sendText(peer: peer, text: trimmed, now: unixNow())
-                try commitOutgoing(.outgoing(trimmed, to: peer, memos: out.memos.count))
+                do {
+                    try commitOutgoing(.outgoing(trimmed, to: peer, memos: out.memos.count))
+                } catch {
+                    rollBack(to: before)
+                    throw error
+                }
                 await deliverToDemo(out.memos)
             } catch {
                 report(error)
@@ -218,11 +236,17 @@ final class ProfileSession {
         }
         guard !isClosed else { return }
         do {
+            let before = try inboxBefore()
             let out = try inbox.sendText(peer: peer, text: trimmed, now: now)
             var message = ChatMessage.outgoing(trimmed, to: peer, memos: out.memos.count)
             message.status = .sending
             message.pendingMemos = out.memos
-            try commitOutgoing(message) // saved before anything leaves the phone
+            do {
+                try commitOutgoing(message) // saved before anything leaves the phone
+            } catch {
+                rollBack(to: before)
+                throw error
+            }
             await transmit(message.id, memos: out.memos, to: out.toAddress)
         } catch {
             report(error)
@@ -311,10 +335,17 @@ final class ProfileSession {
     /// Starts this profile's wallet. Called after unlock with the profile's wallet seed.
     func startWallet(seed: Data) async {
         guard !isClosed, wallet == nil else { return }
+        // Started without a date, a profile whose file wasn't on the phone would begin at the
+        // chain tip and miss its funds: it waits for `setWalletStart`.
+        guard !walletDateNeeded else {
+            deferredSeed = seed
+            return
+        }
         let engine = WalletEngine(seed: seed,
                                   alias: keys.walletAlias,
                                   settings: walletSettings,
-                                  restoreFrom: walletRestored ? walletCreated : nil)
+                                  restoreFrom: walletRestored
+                                      ? RestorePoint(date: walletCreated, height: walletStartHeight) : nil)
         engine.onChange = { [weak self] in await self?.refreshFromWallet() }
         wallet = engine
         Task { [weak self] in
@@ -323,6 +354,21 @@ final class ProfileSession {
             self.checkTakingLong = true
         }
         await engine.start()
+    }
+
+    /// The date and block height entered for a profile whose file wasn't on the phone (see
+    /// `walletDateNeeded`); either can be nil. Its wallet then starts and scans from there, as a
+    /// restored wallet does (see `WalletStart`).
+    func setWalletStart(date: Date?, height: Int?) async {
+        guard !isClosed, walletDateNeeded else { return }
+        walletCreated = date
+        walletStartHeight = height
+        walletRestored = true
+        walletDateNeeded = false
+        persist()
+        guard let seed = deferredSeed else { return }
+        deferredSeed = nil
+        await startWallet(seed: seed)
     }
 
     func updateWalletSettings(_ settings: WalletSettings) async {
@@ -512,6 +558,7 @@ final class ProfileSession {
             let address = try await wallet.newAddress()
             guard !isClosed else { return nil }
             try requireUsable(invite, replacing: replacing) // again: the wait above let other work run
+            let before = try inboxBefore()
             let out = try inbox.startFromInvite(invite: invite, myAddress: Data(address.utf8), firstText: text)
             let isNew = contact(inviter) == nil
             if isNew { contacts.append(Contact(id: inviter, name: "New contact", added: Date())) }
@@ -530,6 +577,7 @@ final class ProfileSession {
             } catch {
                 if isNew { contacts.removeAll { $0.id == inviter } }
                 acceptedInvites = rememberedBefore
+                rollBack(to: before)
                 throw error
             }
             await transmit(message.id, memos: out.memos, to: out.toAddress)
@@ -651,13 +699,33 @@ final class ProfileSession {
                                processedTransactions: processedTransactions,
                                preparedNoteValue: preparedNoteValue,
                                wipePending: wipePending, wipeCleanPasses: wipeCleanPasses,
-                               acceptedInvites: acceptedInvites.isEmpty ? nil : acceptedInvites)
+                               acceptedInvites: acceptedInvites.isEmpty ? nil : acceptedInvites,
+                               walletDateNeeded: walletDateNeeded ? true : nil,
+                               walletStartHeight: walletStartHeight)
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)
     }
 
     private func persist() {
         do { try save() } catch { report(error) }
+    }
+
+    /// The inbox sealed as it is now, taken just before a change that only counts once it's
+    /// saved: a message, or a chat started from an invite. See `rollBack(to:)`.
+    private func inboxBefore() throws -> Data {
+        try inbox.exportSealed(stateKey: keys.stateKey)
+    }
+
+    /// Puts the inbox back the way it was when `before` was taken, after its change couldn't be
+    /// saved (a full disk, say). Otherwise a chat's keys would have moved on, or a chat started
+    /// over, for a message that never left the phone, and the next save that worked would keep it.
+    private func rollBack(to before: Data) {
+        if let restored = try? Self.restoredInbox(before, keys: keys) { inbox = restored }
+    }
+
+    nonisolated static func restoredInbox(_ sealed: Data, keys: ProfileKeyset) throws -> ZkwInbox {
+        try ZkwInbox.restore(identitySeed: keys.identitySeed, stateKey: keys.stateKey,
+                             sealedState: sealed)
     }
 
     private func report(_ error: Error) {
@@ -696,8 +764,9 @@ private struct LoadedProfile: @unchecked Sendable {
             }
         } else {
             // No file for this profile on this device (for example after restoring a device
-            // backup, which never contains chat state). Start with an empty inbox.
-            data = ProfileData(inbox: Data())
+            // backup, which never contains chat state). Start with an empty inbox, and ask when
+            // the wallet was created before it starts: its own file held that date.
+            data = ProfileData(inbox: Data(), walletRestored: true, walletDateNeeded: true)
             inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
             demo = nil
         }

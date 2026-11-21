@@ -23,7 +23,7 @@
 			</array>
 		</dict>
 		<!-- Disk space: statfs and fstatfs are referenced by libraries linked into the app
-		     (found in the Release build by check-app.sh). Nothing is shown or sent. -->
+		     (found by checking the Release build). Nothing is shown or sent. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>

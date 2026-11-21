@@ -29,8 +29,9 @@ change on `dev` with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | |
 | Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (`main`, `nu7`, `dev` up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | |
-| Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | |
+| Nov 19 | **Copies expire after 60 seconds (were 5 minutes); invites and addresses can be shared without the pasteboard.** The next unlock or lock looks for Zignal's copy through a mark in the Keychain (a count and a time, never the text), also after the app was ended. Share invite and Share address open the share sheet, without its Copy. Known gap: on an iPhone, the next unlock can still leave the copy after a trip to the Home Screen (see Security notes). | If the app was ended in the background, the next unlock left Zignal's copy for the other profile to paste (two November 18 reviews). | `1341797` |
 | Nov 19 | **Messages and invites run on the chain's clock, not the phone's date.** Sending, invites, prekey rotation and retries use the time of the newest block the wallet has scanned. Until the wallet has nearly caught up with the network, sending and making an invite wait. | A phone whose date was 2 or more days off sent messages its contacts couldn't read, shown as delivered, and one open with the date weeks ahead could stop every invite already handed out (a November 18 review). | `319bc3e` |
 | Nov 18 | **An app icon.** Two hands forming a Z around a globe, white on black. 1024 x 1024 with only its pixels: no EXIF, colour profile or other hidden data. | TestFlight and the App Store need one. | `e40bd43` |
 | Nov 17 | **What Zignal copied leaves the pasteboard at lock and unlock, and a send check that's taking long says so.** The Lock button and every unlock remove Zignal's copy (a message, an invite, an address), unless something else was copied since. "Checking whether it went out" says after a minute that the wallet hasn't caught up yet. README corrections from the same review. | A copy made in one profile could be pasted into the other, or read by any app, until it expired after five minutes; the decoy even showed "Invite found" for an invite copied in the real profile. With no server, the check looked stuck (a November 15 review). | `3f731ac` |
@@ -70,7 +71,7 @@ Tested on `dev` (November 1 to 18, iPhone, Zcash mainnet):
 - the app icon, then syncing and messages both ways between the real and decoy profiles
   on one iPhone (November 18).
 
-120 app tests and 2 UI tests pass.
+128 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** installing `dev` upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -227,13 +228,18 @@ that's on the roadmap.
   time) instead of any sender identifier. It sits in the memo's readable header (see the
   security notes).
 - **Primitives:** X25519, Ed25519, ML-KEM-768, ChaCha20-Poly1305, HKDF-SHA256, Argon2id,
-  all from audited RustCrypto and dalek crates. No custom primitives.
+  all from widely used RustCrypto and dalek crates (not every one of them has had an
+  independent audit). No custom primitives.
 
 ## How the app uses Zcash
 
 - **One wallet per profile.** The real and decoy profiles each have their own wallet, derived
   from that profile's 24-word phrase (BIP-39). The phrase restores the wallet and identity,
-  not chat history.
+  not chat history. Start with new profiles: restoring isn't advised, and the panic PIN
+  can't erase a copy of the words kept in another app. A restore brings back the real
+  profile (PIN 1), the decoy (PIN 2) or both, each from its own phrase; a profile that
+  isn't restored starts new. It takes a block height or a date (with both, the earlier one
+  is used; with neither, October 1, 2026) and shows only funds from that point on.
 - **Shielded only.** Addresses have a single Orchard receiver, and a new one is made for every
   contact and every invite, so contacts can't link you across chats. No transparent address
   is ever shown or used. Since NU6.3, these payments land in the Ironwood shielded pool.
@@ -301,10 +307,10 @@ that's on the roadmap.
   hours pass with no wrong PIN.
 - Why not clear the count on a right PIN: someone who knows the duress PIN could then guess 4
   PINs, open the decoy, and start again, without ever waiting. With the 2-hour rule they get
-  5 guesses and must then stop for 2 hours: at most about 100 guesses a day, so trying every
-  6-digit PIN would take about 25 years. Clearing it on the real PIN only isn't possible
-  either: the vault doesn't record which PIN opens the real profile, so the decoy can't be
-  told apart from it.
+  5 free guesses and a few more after growing waits, then must stop for 2 hours: at most
+  about 106 guesses a day, so trying every 6-digit PIN would take about 25 years. Clearing
+  it on the real PIN only isn't possible either: the vault doesn't record which PIN opens
+  the real profile, so the decoy can't be told apart from it.
 - A counter that can't be read counts as no free tries left.
 - The wait and the 2 hours are measured on `CLOCK_MONOTONIC_RAW`, which keeps counting while
   the phone sleeps and can't be set, so changing the date or time doesn't shorten them. A
@@ -352,6 +358,10 @@ that's on the roadmap.
 - Profile files and wallet files use complete data protection and are excluded from device
   backups. Wallet file names are derived from each profile's key and don't say which profile
   is which.
+- If a restored phone backup brings back the PIN vault (it's in the Keychain, this device
+  only), the profiles' files and wallets still aren't there: each profile opens empty and
+  asks for its wallet's block height or date, then looks for its funds from there. Chats
+  can't come back.
 
 **Screen and input**
 - The app locks when it goes to the background. Locking stops the profile's wallet: no more
@@ -400,6 +410,10 @@ address and when, is a separate problem, and the app can only solve part of it.
   addresses on every sync, directly even with Tor on, which let the server recognize the
   same wallet across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only
   and no longer asks about transparent ones.
+- **Where a sync resumes:** each sync downloads blocks, directly even with Tor on, from where
+  the wallet's last sync stopped. A server that sees one sync stop and a later one start at
+  the next block can guess they're the same wallet, across IP addresses and VPN exits. It
+  doesn't learn from this which transactions are yours.
 - **Your own server:** point Zignal at a lightwalletd you run, and no third party sees your
   requests. Zebra 6.4 and later can also serve wallets itself, with an experimental
   lightwalletd-compatible server (`rpc.lightwalletd_listen_addr`), so a separate
@@ -460,7 +474,8 @@ Zcash users should consider a VPN as well as Tor. Here is what changes.
 ## Build and test
 
 Requirements: macOS with Xcode 27, an iPhone on iOS 17 or later, Rust (`rustup`), and
-Python 3.11+ with `cryptography` (reference only).
+Python 3.11+ with `cryptography` (reference only). The app runs on iOS 17 or later; the
+test targets are set to iOS 27, so the tests need an iOS 27 Simulator or iPhone.
 
 ```bash
 # First time only: download the Rust dependencies. The build script then works offline.
@@ -491,7 +506,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 120 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 128 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -518,6 +533,10 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     a phone's date far ahead being replaced;
   - the pasteboard mark that outlives the app being ended (a count and a time, never the
     text, and an expired one ignored), the 60-second expiry, and a share sheet without Copy;
+  - a profile whose file isn't on the phone asking for its wallet's block height or date,
+    a restore from a block height, a date or both (the earlier one wins, heights checked,
+    October 1, 2026 when neither is given), a phrase restored as the decoy profile, both
+    profiles restored from their own phrases, and a chat put back after a save that failed;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -583,7 +602,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
     call gets an empty buffer. It comes in through `tempfile`; Zignal makes no such call.
     Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet;
   - `chrono` and `humantime` are marked unmaintained (RUSTSEC-2026-0543 and
-    RUSTSEC-2026-0542, informational): no known vulnerability.
+    RUSTSEC-2026-0542, informational): no known vulnerability;
+  - `bincode` 2.0.1 and `paste` 1.0.15 are marked unmaintained too (informational).
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
@@ -671,6 +691,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   phone has read the other's first message, the chat breaks on both phones without a sign;
   the invite screens say so, and a fix needs the next invite format. An invite used before
   is refused, and a new invite from an existing contact asks before starting the chat over.
+  A used invite whose address or ID was edited isn't recognized as used and asks too: the
+  next invite format signs both.
 - **Spam:** anyone with one of your addresses can send you contact requests (not shown in the
   app yet) or partial messages for the price of a fee. Zignal's core keeps at most 32 requests
   and 64 incomplete messages, dropping the oldest first.
@@ -781,6 +803,7 @@ match the git history; the rows after October 28 are on `dev`.
 | 2026-11-18 | `e40bd43` | `dev`: an app icon; README: private TestFlight first, post-quantum protection for every message next |
 | 2026-11-19 | `64880e5` | `dev`: README: tests through November 18 and corrections |
 | 2026-11-19 | `319bc3e` | `dev`: messages, invites and prekeys on the chain's clock |
+| 2026-11-19 | `1341797` | `dev`: copies expire after 60 seconds; Share invite and Share address |
 
 ## Credits
 

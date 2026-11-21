@@ -37,12 +37,27 @@ struct ProfileData: Codable, Equatable {
     /// first. An invite works only once: accepting it again would only break the chat it
     /// started, so it's refused. Nil when there are none.
     var acceptedInvites: [Data]?
+    /// True when this profile's file wasn't on the phone at unlock (for example after restoring
+    /// a phone backup, which never holds it): the profile started again empty, and its wallet
+    /// waits until the user picks roughly when it was created. Without a date it would start at
+    /// the chain tip and miss the funds it already has. Nil otherwise.
+    var walletDateNeeded: Bool?
+    /// A block height typed when this profile's wallet was restored. The wallet scans from the
+    /// earlier of it and `walletCreated` (see `WalletStart`). Nil when none was typed.
+    var walletStartHeight: Int?
 }
 
-/// A profile being restored from its recovery phrase, waiting for PINs to be set.
+/// Profiles being restored from their recovery phrases, waiting for PINs to be set: the real
+/// one, the decoy, or both. A profile without a phrase starts new.
 struct RestoredProfile: Hashable, Sendable {
-    let secret: Data
-    let created: Date
+    /// The real profile's secret (the unlock PIN opens it), or nil when it starts new.
+    let realSecret: Data?
+    /// The decoy profile's secret (the duress PIN opens it), or nil when it starts new.
+    let decoySecret: Data?
+    /// The date picked, or nil (see `WalletStart`). Used for every restored profile.
+    let created: Date?
+    /// The block height typed, or nil. Used for every restored profile.
+    let height: Int?
 }
 
 struct Contact: Codable, Identifiable, Hashable {

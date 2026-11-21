@@ -55,7 +55,7 @@ private struct Feature: View {
 
 struct PinSetupView: View {
     @Environment(AppModel.self) private var model
-    /// Set when the real profile comes from a recovery phrase.
+    /// Set when profiles come from recovery phrases (the real one, the decoy, or both).
     var restore: RestoredProfile?
     @State private var realPin = ""
     @State private var realRepeat = ""
@@ -67,11 +67,17 @@ struct PinSetupView: View {
 
     var body: some View {
         Form {
-            if restore != nil {
+            if let restore {
                 Section {
-                    Label("Recovery phrase accepted", systemImage: "checkmark.seal")
+                    Label(restore.realSecret != nil && restore.decoySecret != nil
+                          ? "Recovery phrases accepted" : "Recovery phrase accepted",
+                          systemImage: "checkmark.seal")
                 } footer: {
-                    Text("It becomes your real profile. Chat history isn't part of a phrase, so chats start empty. The decoy profile gets a new phrase of its own.")
+                    Text(restore.realSecret != nil && restore.decoySecret != nil
+                         ? "Both profiles come back: the unlock PIN (PIN 1) opens the real one, the duress PIN (PIN 2) the decoy. Chat history isn't part of a phrase, so chats start empty. After setup the real profile opens."
+                         : restore.decoySecret != nil
+                         ? "It becomes your decoy profile, the one the duress PIN (PIN 2) opens. Chat history isn't part of a phrase, so chats start empty. The real profile is new and gets a phrase of its own. After setup the real profile opens: lock, then enter the duress PIN to see the restored one."
+                         : "It becomes your real profile, the one the unlock PIN (PIN 1) opens. Chat history isn't part of a phrase, so chats start empty. The decoy profile gets a new phrase of its own.")
                 }
             }
             Section {
@@ -220,58 +226,85 @@ private struct PinRole: View {
     }
 }
 
-/// Restore: enter a 24-word recovery phrase and roughly when the wallet was created.
+/// Which profiles a restore brings back.
+enum RestoreTarget: Hashable {
+    /// The real profile (PIN 1); the decoy starts new.
+    case real
+    /// The decoy profile (PIN 2); the real one starts new.
+    case decoy
+    /// Both, each from its own 24 words.
+    case both
+}
+
+/// Restore: pick which profile comes back (the real one, the decoy, or both with a phrase each;
+/// a profile that isn't restored starts new), enter the 24-word recovery phrase and roughly
+/// where the wallets started (a block height, a date, or neither; see `WalletStart`). Starting
+/// with new profiles is the way Zignal is meant to start, so this screen says so in red.
 struct RestorePhraseView: View {
+    /// The picked profile's phrase; with `.both`, the real profile's (PIN 1).
     @State private var phrase = ""
-    @State private var created = Date()
+    /// With `.both`: the decoy profile's phrase (PIN 2).
+    @State private var decoyPhrase = ""
+    @State private var heightText = ""
+    @State private var target = RestoreTarget.real
+    /// Nil until a date is picked: never today, since a wallet restored with today's date
+    /// wouldn't find the funds it received before.
+    @State private var created: Date?
     @State private var restored: RestoredProfile?
     @State private var errorText: String?
-    /// Starts true: the field stays hidden until the watcher has reported the capture state.
+    /// Starts true: the fields stay hidden until the watcher has reported the capture state.
     @State private var screenCaptured = true
     @State private var screenshotTaken = false
 
-    /// Sapling activation (2018-10-29). No Zcash shielded wallet can be older.
-    private static let earliest = Calendar(identifier: .gregorian)
-        .date(from: DateComponents(year: 2018, month: 10, day: 29)) ?? .distantPast
+    private static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
 
-    private var wordCount: Int {
-        phrase.split(whereSeparator: \.isWhitespace).count
+    private var phrasesComplete: Bool {
+        Self.wordCount(phrase) == 24 && (target != .both || Self.wordCount(decoyPhrase) == 24)
     }
 
     var body: some View {
+        let height = WalletStart.check(heightText)
         Form {
             Section {
-                if screenCaptured {
-                    CapturedScreenNotice()
-                } else {
-                    TextField("24 words, separated by spaces", text: $phrase, axis: .vertical)
-                        .lineLimit(4...8)
-                        .keyboardType(.asciiCapable)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .privacySensitive()
-                }
-            } header: {
-                Text("Recovery phrase")
-            } footer: {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(wordCount) of 24 words")
-                    if screenshotTaken {
-                        ScreenshotWarning()
-                    }
-                }
+                Text("Restoring isn't advised. Zignal is meant to start with new profiles: go back and tap Get started. Restore only a Zignal messenger profile you made before. If these words are also in another app, the panic PIN can't erase that copy.")
+                    .foregroundStyle(.red)
             }
             Section {
-                DatePicker("Created", selection: $created, in: Self.earliest...Date(),
-                           displayedComponents: .date)
+                Picker("Profile", selection: $target) {
+                    Text("PIN 1 profile").tag(RestoreTarget.real)
+                    Text("PIN 2 profile").tag(RestoreTarget.decoy)
+                    Text("Both").tag(RestoreTarget.both)
+                }
+                .pickerStyle(.segmented)
             } header: {
-                Text("When was this wallet created?")
+                Text("Which messenger profile are you restoring?")
             } footer: {
-                Text("Pick a date on or before you first used this phrase. Earlier is safe but makes the first sync slower.")
+                Text(target == .both
+                     ? "Both profiles come back, each from its own 24 words: PIN 1 (the unlock PIN) opens your real profile, PIN 2 (the duress PIN) the decoy. Chats don't come back. Don't swap the two phrases: the PIN 2 profile is the one you show under pressure, and the panic PIN erases the PIN 1 profile."
+                     : "The phrase brings back that one profile: PIN 1 (the unlock PIN) opens your real profile, PIN 2 (the duress PIN) the decoy. The other profile starts new. Chats don't come back. Pick PIN 2 only for a phrase that was your decoy: that profile is the one you show under pressure, and the panic PIN doesn't erase it.")
+            }
+            phraseSection(target == .both ? "PIN 1 profile's recovery phrase" : "Recovery phrase",
+                          text: $phrase)
+            if target == .both {
+                phraseSection("PIN 2 profile's recovery phrase", text: $decoyPhrase)
+            }
+            Section {
+                WalletStartFields(heightText: $heightText, date: $created)
+            } header: {
+                Text(target == .both ? "When were these profiles created?" : "When was this profile created?")
+            } footer: {
+                VStack(alignment: .leading, spacing: 8) {
+                    if target == .both {
+                        Text("One start is used for both profiles. If they were made on different days, enter the earlier one.")
+                    }
+                    WalletStartFooter(height: height)
+                }
             }
             Section {
                 Button("Continue", action: check)
-                    .disabled(wordCount != 24)
+                    .disabled(!phrasesComplete || !height.isUsable)
             } footer: {
                 if let errorText {
                     Text(errorText).foregroundStyle(.red)
@@ -282,20 +315,70 @@ struct RestorePhraseView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(ScreenCaptureWatcher(isCaptured: $screenCaptured))
         .onScreenshot {
-            if !screenCaptured && !phrase.isEmpty { screenshotTaken = true }
+            if !screenCaptured && !(phrase.isEmpty && decoyPhrase.isEmpty) { screenshotTaken = true }
+        }
+        .onChange(of: target) { _, picked in
+            // The second phrase isn't kept once it's no longer asked for.
+            if picked != .both { decoyPhrase = "" }
+            errorText = nil
         }
         .navigationDestination(item: $restored) { restore in
             PinSetupView(restore: restore)
         }
     }
 
+    /// One recovery phrase field, hidden while the screen is recorded, mirrored or shared.
+    private func phraseSection(_ title: String, text: Binding<String>) -> some View {
+        Section {
+            if screenCaptured {
+                CapturedScreenNotice()
+            } else {
+                TextField("24 words, separated by spaces", text: text, axis: .vertical)
+                    .lineLimit(4...8)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .privacySensitive()
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(Self.wordCount(text.wrappedValue)) of 24 words")
+                if screenshotTaken {
+                    ScreenshotWarning()
+                }
+            }
+        }
+    }
+
     private func check() {
-        do {
-            let secret = try profileSecretFromPhrase(phrase: phrase)
-            errorText = nil
-            restored = RestoredProfile(secret: secret, created: created)
-        } catch {
-            errorText = ZignalError.invalidRecoveryPhrase.errorDescription
+        errorText = nil
+        let height = WalletStart.check(heightText).value
+        let invalid = ZignalError.invalidRecoveryPhrase.errorDescription
+            ?? "That isn't a valid 24-word recovery phrase."
+        guard let first = try? profileSecretFromPhrase(phrase: phrase) else {
+            errorText = target == .both ? "PIN 1 profile: " + invalid : invalid
+            return
+        }
+        switch target {
+        case .real:
+            restored = RestoredProfile(realSecret: first, decoySecret: nil,
+                                       created: created, height: height)
+        case .decoy:
+            restored = RestoredProfile(realSecret: nil, decoySecret: first,
+                                       created: created, height: height)
+        case .both:
+            guard let second = try? profileSecretFromPhrase(phrase: decoyPhrase) else {
+                errorText = "PIN 2 profile: " + invalid
+                return
+            }
+            guard first != second else {
+                errorText = "Both phrases are the same. Each profile has its own 24 words."
+                return
+            }
+            restored = RestoredProfile(realSecret: first, decoySecret: second,
+                                       created: created, height: height)
         }
     }
 }
@@ -352,5 +435,77 @@ struct UnlockView: View {
         let entered = pin
         pin = ""
         Task { await model.unlock(pin: entered) }
+    }
+}
+
+/// Where a restored wallet starts looking for its funds: a block height, or a date picked on a
+/// wheel, or both (the earlier one is used). Used on the restore screen and when a profile's
+/// file wasn't on the phone.
+struct WalletStartFields: View {
+    @Binding var heightText: String
+    @Binding var date: Date?
+    @State private var pickingDate = false
+    @State private var wheelDate = WalletDates.zignalFirst
+
+    var body: some View {
+        TextField("Restore from block height",
+                  text: $heightText,
+                  prompt: Text("Restore from block height, e.g. \(WalletStart.exampleHeight.formatted())"))
+            .keyboardType(.numberPad)
+            .autocorrectionDisabled()
+        Text("or").foregroundStyle(.secondary)
+        Button {
+            wheelDate = date ?? WalletDates.zignalFirst
+            pickingDate = true
+        } label: {
+            HStack {
+                Text("Restore from date").foregroundStyle(.primary)
+                Spacer()
+                Text(date.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "Not picked")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .sheet(isPresented: $pickingDate) {
+            NavigationStack {
+                // The range never ends before the default date, also on a phone whose clock is
+                // far behind (a range that ends before it starts would stop the app).
+                DatePicker("Restore from date", selection: $wheelDate,
+                           in: WalletDates.earliest...max(Date(), WalletDates.zignalFirst),
+                           displayedComponents: .date)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .padding()
+                    .navigationTitle("Restore from date")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { pickingDate = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                date = wheelDate
+                                pickingDate = false
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+}
+
+/// The explanation under `WalletStartFields`, with a red line when the height can't be used.
+struct WalletStartFooter: View {
+    let height: WalletStart.HeightCheck
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Enter a date a few days before you created this profile, or its block height if you know it. With both, the earlier one is used; with neither, October 1, 2026. Earlier is safe but makes the first sync slower.")
+            Text("On this phone the profile starts fresh and looks for its funds only from that point. Anything received before it won't show.")
+                .foregroundStyle(.red)
+            if let message = height.message {
+                Text(message).foregroundStyle(.red)
+            }
+        }
     }
 }

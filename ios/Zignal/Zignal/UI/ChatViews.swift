@@ -26,6 +26,9 @@ struct ChatListView: View {
                         Text("Without it, a lost phone means a lost wallet.")
                     }
                 }
+                if session.walletDateNeeded {
+                    WalletDateSection(session: session)
+                }
                 WalletSection(session: session)
                 if session.contacts.isEmpty {
                     ContentUnavailableView {
@@ -352,6 +355,32 @@ private extension View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(session.errorText ?? "")
+        }
+    }
+}
+
+/// Shown when this profile's file wasn't on the phone (for example after restoring a phone
+/// backup): its chats start empty, and its wallet waits for a date to look for its funds from.
+private struct WalletDateSection: View {
+    let session: ProfileSession
+    @State private var heightText = ""
+    @State private var created: Date?
+
+    var body: some View {
+        let height = WalletStart.check(heightText)
+        Section {
+            WalletStartFields(heightText: $heightText, date: $created)
+            Button("Find my funds") {
+                Task { await session.setWalletStart(date: created, height: height.value) }
+            }
+            .disabled(!height.isUsable)
+        } header: {
+            Text("When was this wallet created?")
+        } footer: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This profile's chats weren't on this phone, for example after restoring a phone backup, so they start empty. Its funds are still on the chain.")
+                WalletStartFooter(height: height)
+            }
         }
     }
 }
