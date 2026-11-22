@@ -17,7 +17,10 @@ the same commit.
 - README, CHANGELOG and SECURITY.md: Zignal is no longer part of the Zecathon (its
   submission stays at the tag `zecathon-final`) and is in private testing on TestFlight, with
   internal testers invited by the developer. `main` holds the first release, tagged
-  `private-testing-1`.
+  `private-testing-1`. (`e94d312`)
+- PRIVACY.md, the privacy policy: what the app, the demo website and TestFlight collect, and
+  what they don't. Linked from the README; the demo website has the same text. Tagged
+  `private-testing-2` on `main`.
 
 ## 2026-11-21
 

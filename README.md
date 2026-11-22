@@ -18,6 +18,9 @@ only some metadata (see [Security notes](#security-notes-and-known-limitations))
 > NU7 and has the changes listed in
 > [Since the Zecathon submission](#since-the-zecathon-submission) below.
 
+**Privacy:** [PRIVACY.md](PRIVACY.md) says what the app, the demo website and TestFlight
+collect, and what they don't. The demo website has the same text as its privacy page.
+
 ## Since the Zecathon submission
 
 | Branch or tag | What it holds |
@@ -887,6 +890,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-21 | `331e76a` | `dev`: clean-up waits until both clocks agree; the next unlock clears Zignal's copy; a first message waits for a reply |
 | 2026-11-21 | `605c99a` | `dev`: README screenshots of the restore screens and of a restored profile's notice |
 | 2026-11-21 | `c1ef831` | `dev`: Tor on for new profiles; profiles saved before keep their setting |
+| 2026-11-22 | `e94d312` | `dev` and `main`: no longer part of the Zecathon; private testing on TestFlight, the first release (tag `private-testing-1`) |
 
 ## Credits
 
