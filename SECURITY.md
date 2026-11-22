@@ -35,7 +35,8 @@ Report bugs in librustzcash, the upstream Zcash Swift SDK, lightwalletd or Zebra
 projects, and tell us too if they affect Zignal.
 
 Fixes go to the `dev` branch first. `main` holds releases: tested versions of `dev`, each
-with a tag. The Zecathon submission stays at the tag `zecathon-final`.
+with a tag; the first is `private-testing-1`. Zignal is no longer part of the Zecathon, and
+its submission stays at the tag `zecathon-final`.
 
 ## Known limitations
 

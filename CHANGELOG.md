@@ -6,9 +6,18 @@ the same commit.
 - The tag `zecathon-final` (October 28, 2026) is the submission, exactly as submitted.
 - `nu7` (tag `zecathon-nu7`) is the submission plus only the SDK update for NU7.
 - Work happens on `dev`. `main` holds releases: tested versions of `dev`, each with a tag.
-  Until the first one is merged, `main` is still at `zecathon-final`.
+  The first, `private-testing-1`, starts private testing: Zignal is no longer part of the
+  Zecathon.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
+
+## 2026-11-22
+
+### Documentation
+- README, CHANGELOG and SECURITY.md: Zignal is no longer part of the Zecathon (its
+  submission stays at the tag `zecathon-final`) and is in private testing on TestFlight, with
+  internal testers invited by the developer. `main` holds the first release, tagged
+  `private-testing-1`.
 
 ## 2026-11-21
 
@@ -20,7 +29,7 @@ the same commit.
   default before, and a profile saved nothing about it until its settings were changed, so a
   profile made before keeps the setting it had (Tor off unless it was turned on); it can be
   turned on under Network. New profiles now save their network settings. 2 new tests, 2
-  changed.
+  changed. (`c1ef831`)
 - **Clean-up that can't be undone waits until the chain's time and the phone's clock
   agree.** Since November 19 the app's clock is the time in the newest block the wallet has
   scanned, and block times come from the light server. A server reporting times 22 or more

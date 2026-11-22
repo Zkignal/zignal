@@ -9,8 +9,10 @@ On top of Zcash's own memo encryption, Zignal adds a post-quantum hybrid handsha
 Double Ratchet. A leaked wallet viewing key reveals neither past messages nor who sent them,
 only some metadata (see [Security notes](#security-notes-and-known-limitations)).
 
-> **Status:** experimental, built for the Zecathon (October 2026). Not audited.
-> It runs on Zcash mainnet with real ZEC, so use small amounts.
+> **Status:** experimental and not audited. Zignal started at the Zecathon (October 2026)
+> and is no longer part of it: it is now in private testing on TestFlight, with internal
+> testers invited by the developer. It runs on Zcash mainnet with real ZEC, so use small
+> amounts.
 >
 > **This version is ahead of the Zecathon submission** (tag `zecathon-final`): it supports
 > NU7 and has the changes listed in
@@ -23,14 +25,14 @@ only some metadata (see [Security notes](#security-notes-and-known-limitations))
 | tag `zecathon-final` | The Zecathon submission (October 28, 2026), exactly as submitted. |
 | `nu7` | `zecathon-final` plus only the SDK update for NU7 (nothing in the app changes) and its README. Tagged `zecathon-nu7` after testing on mainnet past NU7 activation. |
 | `dev` | Where work continues: the same SDK as `nu7`, plus app fixes. |
-| `main` | Releases: tested versions of `dev`, each with a tag. Until the first one is merged, `main` is still at `zecathon-final`. |
+| `main` | Releases: tested versions of `dev`, each with a tag. The first, `private-testing-1` (November 2026), starts private testing; Zignal is no longer part of the Zecathon. |
 
 What has changed since the submission, newest first. [CHANGELOG.md](CHANGELOG.md) lists
 every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | |
+| Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | `c1ef831` |
 | Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | `331e76a` |
 | Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | `4679be2` |
 | Nov 21 | **License: AGPL-3.0-only from this commit (was MIT or Apache-2.0).** Whoever shares Zignal's code, changed or not, must pass on their source under the same license. Versions already published (the tags `zecathon-final` and `zecathon-nu7`, the `nu7` branch, and all commits up to `1341797`) stay under MIT or Apache-2.0; the SDK in `vendor/` stays MIT. No code changes. See [License](#license). | So that changes built on Zignal's code stay open to everyone, as Zignal's are. | `5bb6e53` |
@@ -204,9 +206,9 @@ that's on the roadmap.
 ## Try it
 
 - **In a browser:** [the Zignal demo](https://zkignal.github.io/zignal-demo/experience.html), a simulation with the app's own screens and text: no wallet, no keys, nothing sent.
-- **TestFlight:** not public yet: private testing by invitation comes first, then a public
-  link. Until then, build from source with Xcode (see Build and test); a free Apple ID can
-  install it on your own iPhone.
+- **TestFlight:** private testing started in November 2026, with internal testers invited
+  by the developer; a public link comes later. Until then, build from source with Xcode
+  (see Build and test); a free Apple ID can install it on your own iPhone.
 - **Two iPhones:** on each, set PINs and back up the recovery phrase, then fund the wallet
   with about 0.01 ZEC (Add funds). Received ZEC can be spent after 10 confirmations.
   Receiving messages needs no ZEC: the sender pays the network fee.
@@ -782,7 +784,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 ## Roadmap (after the Zecathon)
 
-- **TestFlight:** private testing first, then a public link.
+- **TestFlight:** private testing started in November 2026 (tag `private-testing-1`); a
+  public link comes later.
 - **NU7 compatibility:** done on `nu7` and `dev`, tagged `zecathon-nu7` after testing past
   activation (see [Since the Zecathon submission](#since-the-zecathon-submission)).
 - **Length privacy:** an option to pad messages to fixed memo counts, so the fee doesn't show
@@ -883,6 +886,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-21 | `4679be2` | `dev`: restore from a block height or a date, for the real profile, the decoy or both; a failed save leaves the chat as it was |
 | 2026-11-21 | `331e76a` | `dev`: clean-up waits until both clocks agree; the next unlock clears Zignal's copy; a first message waits for a reply |
 | 2026-11-21 | `605c99a` | `dev`: README screenshots of the restore screens and of a restored profile's notice |
+| 2026-11-21 | `c1ef831` | `dev`: Tor on for new profiles; profiles saved before keep their setting |
 
 ## Credits
 
