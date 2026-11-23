@@ -17,7 +17,13 @@ the same commit.
 - **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite
   that is scanned or pasted now stops the camera and takes the scanner out there and then,
   before the first message is typed; it stayed on, with its green dot, until the screen
-  closed. A wrong or used invite leaves the camera on to scan again. 1 new test.
+  closed. A wrong or used invite leaves the camera on to scan again. 1 new test. (`147335f`)
+
+### Documentation
+- **What the light server learns, said plainly.** PRIVACY.md and the README now say that the
+  server learns which transactions the wallet reads, because the wallet fetches each one by
+  its ID, with Tor on or off; what Tor, a VPN and your own server change; and that hiding it
+  is on the roadmap. The privacy policy's effective date moves to this day.
 
 ## 2026-11-22
 

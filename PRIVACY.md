@@ -1,6 +1,6 @@
 # Privacy
 
-Effective November 22, 2026.
+Effective November 23, 2026.
 
 Zignal is a private messenger that sends messages inside shielded Zcash transactions. There
 is no Zignal server and no Zignal account. We, the developer of Zignal, don't collect,
@@ -19,6 +19,7 @@ which delivers the app to testers.
 | Logs or crash reporting by Zignal | None (Apple's TestFlight sends crash reports; see below) |
 | Where your data lives | On your phone, encrypted |
 | What we can hand over if asked | Nothing from the app: we never have it |
+| What the light server can learn | Which transactions you read, not what's in them (see below) |
 
 ## The app
 
@@ -39,12 +40,20 @@ which delivers the app to testers.
   zec.rocks, Stardust and Cake Wallet. You can use your own instead.
 
 **What the server sees**
-- **Tor off:** your IP address with every request: transactions you send, transactions it
-  fetches for you, and blocks you download.
-- **Tor on (the default for new profiles):** sending and fetching go through Tor, so the
+- **Which transactions you read:** to read a message, the app asks the server for that
+  transaction by its ID, and it checks the messages you send the same way until they are
+  mined. So the server learns which transactions carry messages for you, with Tor on or off.
+  It can't read them: the messages stay encrypted. We are working on hiding this.
+- **Tor off:** the server also sees your IP address with every request: transactions you
+  send, the ones you read, and blocks you download. Together with the transaction IDs, that
+  shows who reads which message and, if the same server saw it sent, who wrote to whom.
+- **Tor on (the default for new profiles):** sending and reading go through Tor, so the
   server sees a Tor exit instead of your IP address. Block downloads still connect directly,
-  so the server learns that you use Zcash and when you sync. The Tor network's entry relay
-  sees your IP address but not what you send.
+  so the server learns that you use Zcash and when you sync, and it may link the
+  transactions you read to that sync by their timing. The Tor network's entry relay sees
+  your IP address but not what you send.
+- **What helps today:** keep Tor on (Network settings), add a VPN with a kill switch, or use
+  a light server you run yourself.
 - The README's [network privacy](README.md#network-privacy-tor-a-vpn-or-your-own-server)
   section explains this in detail, including how a VPN helps.
 
