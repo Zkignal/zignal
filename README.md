@@ -35,6 +35,7 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
+| Nov 23 | **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite that is scanned or pasted ends the camera there and then, before the first message is typed; a wrong or used invite leaves it on to scan again. | The camera stayed on, with its green dot, until the Add contact screen closed (a November test), though nothing needed it after the invite was read. | |
 | Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | `c1ef831` |
 | Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | `331e76a` |
 | Nov 21 | **Restore from a block height or a date (the earlier one wins; October 1, 2026 when neither is given); a profile whose saved data isn't on the phone asks for one; a message or chat start that couldn't be saved leaves the chat as it was.** After a phone backup is restored, each profile opens empty and its wallet waits instead of starting at the chain tip. The real profile (PIN 1), the decoy (PIN 2) or both can be restored, each from its own phrase; a profile that isn't restored starts new. The restore screen says in red that new profiles are the way to start. | Its wallet started at the chain tip and showed no funds; a restore with the screen's date (today) missed earlier funds; a failed save left the chat's keys moved on until the app locked (November 18 reviews). | `4679be2` |
@@ -84,7 +85,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-133 app tests and 2 UI tests pass.
+134 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -651,12 +652,11 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   you copied in another app within those seconds is cleared too. In the background the
   copy stays, so an address or an invite can be pasted into another app; until it
   expires, any app can read it then.
-- **The camera after a scan:** once the Add contact screen has read an invite, the camera
-  stays on (the green dot) until that screen closes, when you send or press Cancel. Zignal
-  doesn't record or keep what the camera sees. Paste works without the camera: if you
-  prefer, turn off camera access for Zignal in the Settings app when you're not scanning,
-  and turn it on again to scan. Turning the camera off as soon as an invite is read is
-  planned.
+- **The camera:** the Add contact screen turns the camera off as soon as it has read an
+  invite, scanned or pasted, before you type the first message; it's on only while you
+  scan. Zignal doesn't record or keep what the camera sees. Paste works without the camera:
+  if you prefer, turn off camera access for Zignal in the Settings app and paste invites
+  instead.
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
@@ -820,8 +820,6 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **From the November 20 review:** a core that keeps the prekeys unused invites still need,
   whatever time it is given. In the app, clean-up that waits until the chain's time and the
   phone's clock agree is done.
-- **The camera off as soon as an invite is read**, without waiting for the Add contact
-  screen to close.
 - **Lower fees:** the Zcash SDK on the librustzcash release with the ZIP 2009 fee (1,000
   zatoshis per action), with the app's fee texts in the same change.
 - **Faster restores:** more checkpoints between June and November 2026, so a wallet restored
@@ -891,6 +889,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-21 | `605c99a` | `dev`: README screenshots of the restore screens and of a restored profile's notice |
 | 2026-11-21 | `c1ef831` | `dev`: Tor on for new profiles; profiles saved before keep their setting |
 | 2026-11-22 | `e94d312` | `dev` and `main`: no longer part of the Zecathon; private testing on TestFlight, the first release (tag `private-testing-1`) |
+| 2026-11-22 | `b6b3f73` | `dev` and `main`: PRIVACY.md, the privacy policy (tag `private-testing-2`) |
 
 ## Credits
 

@@ -1995,3 +1995,17 @@ struct InboxRollbackTests {
         #expect(try readByBob(try alice.sendText(peer: bobId, text: "lost", now: now).memos) == nil)
     }
 }
+
+@MainActor
+struct ScannerCameraTests {
+    /// Add contact turns the camera off as soon as it reads an invite. Off stays off: the
+    /// scanner doesn't start again on that screen, and turning off twice is harmless.
+    @Test func turnsOffForGood() {
+        let camera = ScannerCamera()
+        #expect(!camera.isOff)
+        camera.turnOff()
+        #expect(camera.isOff)
+        camera.turnOff()
+        #expect(camera.isOff)
+    }
+}

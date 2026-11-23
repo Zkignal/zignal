@@ -76,6 +76,9 @@ struct AcceptInviteView: View {
     @State private var sending = false
     @State private var errorText: String?
     @State private var cameraReady = false
+    /// Turned off as soon as an invite is read, so the camera doesn't stay on while the first
+    /// message is typed.
+    @State private var camera = ScannerCamera()
     @State private var pasted = ""
     /// The contact's name when the invite comes from someone already in the contacts.
     @State private var replacing: String?
@@ -107,7 +110,7 @@ struct AcceptInviteView: View {
                                 if text.count >= 40 { accept(text) }
                             }
                         if cameraReady {
-                            InviteScanner { accept($0) }
+                            InviteScanner(camera: camera) { accept($0) }
                                 .frame(height: 320)
                                 .listRowInsets(EdgeInsets())
                         }
@@ -214,6 +217,8 @@ struct AcceptInviteView: View {
             errorText = AppModel.describe(error)
             return
         }
+        // Nothing needs the camera once an invite is read, scanned or pasted.
+        camera.turnOff()
         code = text
         errorText = nil
     }
@@ -239,8 +244,36 @@ struct AcceptInviteView: View {
     }
 }
 
-/// The live camera QR scanner. Calls `onCode` with each new QR code it reads.
+/// Ends the invite scanner's camera for good, without waiting for the Add contact screen to
+/// close. The camera's green dot used to stay on until that screen closed, so turning off
+/// doesn't wait for SwiftUI to remove the scanner: it stops the scanner and takes it out of its
+/// holder, which lets it go and the camera with it.
+@MainActor
+final class ScannerCamera {
+    /// True once turned off. A scanner made after that never starts.
+    private(set) var isOff = false
+    fileprivate weak var scanner: DataScannerViewController?
+
+    func turnOff() {
+        isOff = true
+        guard let scanner else { return }
+        self.scanner = nil
+        scanner.stopScanning()
+        scanner.delegate = nil
+        // Taken out just after: this often runs inside the scanner's own call that reported the
+        // invite.
+        Task { @MainActor in
+            scanner.willMove(toParent: nil)
+            scanner.view.removeFromSuperview()
+            scanner.removeFromParent()
+        }
+    }
+}
+
+/// The live camera QR scanner. Calls `onCode` with each new QR code it reads, until `camera` is
+/// turned off.
 struct InviteScanner: UIViewControllerRepresentable {
+    let camera: ScannerCamera
     let onCode: (String) -> Void
 
     /// False on devices without the scanner (before iPhone XS).
@@ -251,7 +284,11 @@ struct InviteScanner: UIViewControllerRepresentable {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
     }
 
-    func makeUIViewController(context: Context) -> DataScannerViewController {
+    /// A plain holder with the scanner as its child, so `ScannerCamera` can take the scanner
+    /// out, and end its camera, whatever SwiftUI does with the holder.
+    func makeUIViewController(context: Context) -> UIViewController {
+        let holder = UIViewController()
+        guard !camera.isOff else { return holder }
         let scanner = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: [.qr])],
             qualityLevel: .accurate,
@@ -260,30 +297,40 @@ struct InviteScanner: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
-        return scanner
+        holder.addChild(scanner)
+        scanner.view.frame = holder.view.bounds
+        scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        holder.view.addSubview(scanner.view)
+        scanner.didMove(toParent: holder)
+        camera.scanner = scanner
+        return holder
     }
 
-    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+    func updateUIViewController(_ holder: UIViewController, context: Context) {
         context.coordinator.onCode = onCode
+        guard !camera.isOff, let scanner = camera.scanner else { return }
         if !scanner.isScanning { try? scanner.startScanning() }
     }
 
-    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
-        scanner.stopScanning()
+    static func dismantleUIViewController(_ holder: UIViewController, coordinator: Coordinator) {
+        coordinator.camera.turnOff()
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode) }
+    func makeCoordinator() -> Coordinator { Coordinator(camera: camera, onCode: onCode) }
 
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        let camera: ScannerCamera
         var onCode: (String) -> Void
 
-        init(onCode: @escaping (String) -> Void) {
+        init(camera: ScannerCamera, onCode: @escaping (String) -> Void) {
+            self.camera = camera
             self.onCode = onCode
         }
 
         func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem],
                          allItems: [RecognizedItem]) {
+            guard !camera.isOff else { return }
             for item in addedItems {
                 if case .barcode(let barcode) = item, let text = barcode.payloadStringValue {
                     onCode(text)

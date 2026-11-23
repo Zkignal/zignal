@@ -11,6 +11,14 @@ the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-23
+
+### Fixed
+- **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite
+  that is scanned or pasted now stops the camera and takes the scanner out there and then,
+  before the first message is typed; it stayed on, with its green dot, until the screen
+  closed. A wrong or used invite leaves the camera on to scan again. 1 new test.
+
 ## 2026-11-22
 
 ### Documentation
@@ -20,7 +28,7 @@ the same commit.
   `private-testing-1`. (`e94d312`)
 - PRIVACY.md, the privacy policy: what the app, the demo website and TestFlight collect, and
   what they don't. Linked from the README; the demo website has the same text. Tagged
-  `private-testing-2` on `main`.
+  `private-testing-2` on `main`. (`b6b3f73`)
 
 ## 2026-11-21
 
