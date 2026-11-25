@@ -11,6 +11,17 @@ the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-25
+
+### Added
+- **A crowd meter for cover fetches (Debug builds only).** The SDK prints to Xcode's
+  console, for each batch of synced blocks, how many transactions carry Ironwood, Orchard
+  or Sapling parts and how many Ironwood actions they have, and the size of each
+  transaction the wallet fetches: no transaction IDs, addresses or block heights; nothing
+  stored or sent. Release and TestFlight builds don't contain it. Its numbers size the
+  planned cover fetches (roadmap). The SDK change is in
+  `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
+
 ## 2026-11-23
 
 ### Fixed
@@ -23,7 +34,7 @@ the same commit.
 - **What the light server learns, said plainly.** PRIVACY.md and the README now say that the
   server learns which transactions the wallet reads, because the wallet fetches each one by
   its ID, with Tor on or off; what Tor, a VPN and your own server change; and that hiding it
-  is on the roadmap. The privacy policy's effective date moves to this day.
+  is on the roadmap. The privacy policy's effective date moves to this day. (`51c8a45`)
 
 ## 2026-11-22
 

@@ -217,3 +217,23 @@ sent to the server.
 
 Files: `Sources/ZcashLightClientKit/Synchronizer/SDKSynchronizer.swift` and this file. The
 changed spot is marked `Zignal patch`. Not on the `nu7` branch.
+
+## Measurement: how crowded the synced blocks are (Debug builds only, after the Zecathon submission)
+
+**Why.** To read a message, the wallet fetches its transaction from the light server by ID, so
+the server learns which transactions carry the wallet's messages (the app's PRIVACY.md says
+so). The planned fix fetches other shielded transactions from the synced blocks along with the
+real one (cover fetches). How many to fetch, and which, depends on how many shielded
+transactions a batch of blocks holds and how many actions they carry.
+
+**Change.** Debug builds only (`#if DEBUG`): for each batch of compact blocks written to the
+cache, the SDK prints to Xcode's console the number of blocks and transactions, how many carry
+Ironwood, Orchard or Sapling parts, and how many Ironwood actions those transactions have
+(grouped 1, 2, 3-4, 5-8, 9-16, 17+). For each transaction the wallet fetches by ID, it prints
+the size in bytes. It prints no transaction ID, address or block height, stores nothing and
+sends nothing. Release builds, including TestFlight, contain none of this code.
+
+Files: `Sources/ZcashLightClientKit/Utils/ZignalCrowdMeter.swift` (new),
+`Sources/ZcashLightClientKit/Block/Download/BlockDownloader.swift`,
+`Sources/ZcashLightClientKit/Block/Enhance/BlockEnhancer.swift` and this file. The changed
+spots are marked `Zignal patch`. Not on the `nu7` branch.

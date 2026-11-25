@@ -214,6 +214,10 @@ actor BlockDownloaderImpl {
     }
 
     private func blocksBufferWritten(_ buffer: [ZcashCompactBlock]) async throws {
+        #if DEBUG
+        // Zignal patch: Debug builds count how crowded each batch is (ZignalCrowdMeter).
+        ZignalCrowdMeter.report(buffer)
+        #endif
         guard let lastBlock = buffer.last else { return }
         latestDownloadedBlockHeight = lastBlock.height
     }

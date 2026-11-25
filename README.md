@@ -900,7 +900,8 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-21 | `c1ef831` | `dev`: Tor on for new profiles; profiles saved before keep their setting |
 | 2026-11-22 | `e94d312` | `dev` and `main`: no longer part of the Zecathon; private testing on TestFlight, the first release (tag `private-testing-1`) |
 | 2026-11-22 | `b6b3f73` | `dev` and `main`: PRIVACY.md, the privacy policy (tag `private-testing-2`) |
-| 2026-11-23 | `147335f` | `dev`: the camera turns off as soon as an invite is read |
+| 2026-11-23 | `147335f` | `dev` and `main`: the camera turns off as soon as an invite is read |
+| 2026-11-23 | `51c8a45` | `dev` and `main`: PRIVACY.md and the README say what the light server learns (tag `private-testing-3`) |
 
 ## Credits
 

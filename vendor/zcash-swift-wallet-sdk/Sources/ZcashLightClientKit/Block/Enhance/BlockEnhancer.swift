@@ -139,6 +139,10 @@ extension BlockEnhancerImpl: BlockEnhancer {
                                 mode: await sdkFlags.ifTor(ServiceMode.txIdGroup(prefix: "fetch", txId: txId.data))
                             )
                             logger.info("BlockEnhancer [\(reqID)] fetch returned status=\(response.status) has_tx=\(response.tx != nil)")
+                            #if DEBUG
+                            // Zignal patch: Debug builds print the fetched size only (ZignalCrowdMeter).
+                            ZignalCrowdMeter.fetched("status", bytes: response.tx?.raw.count)
+                            #endif
 
                             if response.status == .txidNotRecognized {
                                 try await rustBackend.setTransactionStatus(txId: txId.data, status: response.status)
@@ -169,6 +173,10 @@ extension BlockEnhancerImpl: BlockEnhancer {
                             )
                             let hasMined = response.tx?.minedHeight != nil
                             logger.info("BlockEnhancer [\(reqID)] fetch returned status=\(response.status) has_tx=\(response.tx != nil) has_mined_height=\(hasMined)")
+                            #if DEBUG
+                            // Zignal patch: Debug builds print the fetched size only (ZignalCrowdMeter).
+                            ZignalCrowdMeter.fetched("message", bytes: response.tx?.raw.count)
+                            #endif
 
                             if response.status == .txidNotRecognized {
                                 try await rustBackend.setTransactionStatus(txId: txId.data, status: .txidNotRecognized)
