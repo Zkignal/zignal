@@ -14,13 +14,22 @@ the same commit.
 ## 2026-11-25
 
 ### Added
+- **New-message marks and an optional daily reminder.** A message that arrives while its
+  chat isn't on screen is marked new on the chat list (a dot; VoiceOver reads the count)
+  until the chat is opened; the mark is saved with the profile. A daily reminder can be
+  turned on from the chat list: a notification the iPhone makes at the time you pick, always
+  "Zignal: Open to check", silent, never saying whether anything arrived. No push service
+  and no server; Zignal still checks nothing while it's locked. The time is kept only by
+  iOS, not in Zignal's files, and is the same for both profiles; unlocking clears a shown
+  reminder. PRIVACY.md lists the notification permission, and its effective date moves to
+  this day. 6 new tests (140 app tests).
 - **A crowd meter for cover fetches (Debug builds only).** The SDK prints to Xcode's
   console, for each batch of synced blocks, how many transactions carry Ironwood, Orchard
   or Sapling parts and how many Ironwood actions they have, and the size of each
   transaction the wallet fetches: no transaction IDs, addresses or block heights; nothing
   stored or sent. Release and TestFlight builds don't contain it. Its numbers size the
   planned cover fetches (roadmap). The SDK change is in
-  `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
+  `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`. (`faac4b8`)
 
 ## 2026-11-23
 

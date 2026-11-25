@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import Testing
 import UIKit
+import UserNotifications
 @testable import Zignal
 
 /// A profile store in a fresh temporary folder with its own device key, so tests never touch
@@ -2007,5 +2008,119 @@ struct ScannerCameraTests {
         #expect(camera.isOff)
         camera.turnOff()
         #expect(camera.isOff)
+    }
+}
+
+@MainActor
+struct UnreadTests {
+    @Test func aMessageThatArrivesOffScreenIsNewUntilItsChatOpens() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        session.demoReplyDelay = .zero
+        await session.startDemoChat()
+        let demo = try #require(session.contacts.first)
+        // The demo contact's reply came in while the chat list was showing, not the chat.
+        #expect(session.unreadCount(with: demo.id) == 1)
+        #expect(session.messages(with: demo.id).first?.unread == nil) // our own message
+
+        // Still new after a lock and an unlock: the mark is saved with the profile.
+        let reopened = try await ProfileSession.open(keys: keys, store: store)
+        #expect(reopened.unreadCount(with: demo.id) == 1)
+        reopened.chatOpened(demo.id)
+        #expect(reopened.unreadCount(with: demo.id) == 0)
+        #expect(reopened.errorText == nil)
+
+        let again = try await ProfileSession.open(keys: keys, store: store)
+        #expect(again.unreadCount(with: demo.id) == 0)
+        #expect(again.messages(with: demo.id).count == 2)
+    }
+
+    @Test func whatArrivesWhileItsChatIsOpenIsNeverNew() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        session.demoReplyDelay = .zero
+        await session.startDemoChat()
+        let demo = try #require(session.contacts.first)
+
+        session.chatOpened(demo.id)
+        await session.send("while open", to: demo.id)
+        #expect(session.messages(with: demo.id).count == 4)
+        #expect(session.unreadCount(with: demo.id) == 0)
+
+        // Back on the chat list: the next reply is new again.
+        session.chatClosed(demo.id)
+        await session.send("after leaving", to: demo.id)
+        #expect(session.unreadCount(with: demo.id) == 1)
+
+        // A locked profile changes nothing and reports nothing.
+        session.close()
+        session.chatOpened(demo.id)
+        #expect(session.unreadCount(with: demo.id) == 1)
+        #expect(session.errorText == nil)
+    }
+
+    @Test func theNewMarkIsSavedOnlyWhenSet() throws {
+        var message = ChatMessage.incoming("hi", from: Data([1, 2, 3]))
+        let plain = try JSONEncoder().encode(message)
+        // Messages saved before the mark existed have no such field, and decode the same way.
+        #expect(!String(decoding: plain, as: UTF8.self).contains("unread"))
+        #expect(try JSONDecoder().decode(ChatMessage.self, from: plain).unread == nil)
+        message.unread = true
+        let marked = try JSONEncoder().encode(message)
+        #expect(try JSONDecoder().decode(ChatMessage.self, from: marked).unread == true)
+    }
+}
+
+struct ReminderTests {
+    @Test func theReminderSaysTheSameWordsEveryDayAndNothingElse() throws {
+        let time = try #require(Reminder.Time(hour: 21, minute: 30))
+        let request = Reminder.request(at: time)
+        #expect(request.identifier == Reminder.identifier)
+        #expect(request.content.title == "Zignal")
+        #expect(request.content.body == "Open to check")
+        #expect(request.content.subtitle.isEmpty)
+        #expect(request.content.userInfo.isEmpty)
+        #expect(request.content.attachments.isEmpty)
+        #expect(request.content.badge == nil)
+        #expect(request.content.sound == nil)
+        let trigger = try #require(request.trigger as? UNCalendarNotificationTrigger)
+        #expect(trigger.repeats)
+        #expect(trigger.dateComponents.hour == 21)
+        #expect(trigger.dateComponents.minute == 30)
+        // Every day: no date, weekday or time zone is fixed.
+        #expect(trigger.dateComponents.day == nil)
+        #expect(trigger.dateComponents.weekday == nil)
+        #expect(trigger.dateComponents.timeZone == nil)
+    }
+
+    @Test func theTimeIsReadBackFromThePendingReminder() throws {
+        let time = try #require(Reminder.Time(hour: 7, minute: 5))
+        let request = Reminder.request(at: time)
+        #expect(Reminder.time(of: request) == time)
+        // A notification under another name isn't the reminder.
+        let other = UNNotificationRequest(identifier: "other", content: request.content,
+                                          trigger: request.trigger)
+        #expect(Reminder.time(of: other) == nil)
+        // Nor is one that fires once.
+        var when = DateComponents()
+        when.hour = 7
+        when.minute = 5
+        let once = UNNotificationRequest(
+            identifier: Reminder.identifier, content: request.content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false))
+        #expect(Reminder.time(of: once) == nil)
+    }
+
+    @Test func timesOutsideTheDayAreRefused() {
+        #expect(Reminder.Time(hour: 0, minute: 0) != nil)
+        #expect(Reminder.Time(hour: 23, minute: 59) != nil)
+        #expect(Reminder.Time(hour: 24, minute: 0) == nil)
+        #expect(Reminder.Time(hour: -1, minute: 0) == nil)
+        #expect(Reminder.Time(hour: 0, minute: 60) == nil)
+        #expect(Reminder.Time(hour: 0, minute: -1) == nil)
     }
 }

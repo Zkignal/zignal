@@ -6,6 +6,7 @@ struct ChatListView: View {
     @State private var showPhrase = false
     @State private var showInvite = false
     @State private var addContact = false
+    @State private var showReminder = false
     @State private var path: [Data] = []
 
     init(session: ProfileSession) {
@@ -58,9 +59,15 @@ struct ChatListView: View {
                 } else {
                     ForEach(session.contactsByRecent) { contact in
                         NavigationLink(value: contact.id) {
-                            ChatRow(contact: contact, last: session.lastMessage(with: contact.id))
+                            ChatRow(contact: contact, last: session.lastMessage(with: contact.id),
+                                    unread: session.unreadCount(with: contact.id))
                         }
                     }
+                }
+                Section {
+                    Button("Reminder", systemImage: "bell") { showReminder = true }
+                } footer: {
+                    Text("An optional daily nudge to open Zignal. It never says whether anything arrived.")
                 }
             }
             .navigationTitle("Chats")
@@ -100,6 +107,9 @@ struct ChatListView: View {
             .sheet(isPresented: $addContact) {
                 AcceptInviteView(session: session) { peer in path = [peer] }
             }
+            .sheet(isPresented: $showReminder) {
+                ReminderView()
+            }
         }
         // One alert for the whole stack, so a pushed screen never shows a second copy.
         .errorAlert(session)
@@ -109,10 +119,22 @@ struct ChatListView: View {
 private struct ChatRow: View {
     let contact: Contact
     let last: ChatMessage?
+    /// Received messages that haven't been on screen yet.
+    let unread: Int
+
+    private var unreadLabel: String {
+        unread == 1 ? "1 new message" : "\(unread) new messages"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
+                if unread > 0 {
+                    Circle()
+                        .fill(.tint)
+                        .frame(width: 10, height: 10)
+                        .accessibilityLabel(unreadLabel)
+                }
                 Text(contact.name).font(.headline)
                 if contact.verified {
                     Image(systemName: "checkmark.seal.fill")
@@ -128,7 +150,7 @@ private struct ChatRow: View {
             }
             Text(last?.text ?? "")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(unread > 0 ? Color.primary : Color.secondary)
                 .lineLimit(1)
         }
         .padding(.vertical, 2)
@@ -177,6 +199,9 @@ struct ConversationView: View {
         .sheet(isPresented: $showInfo) {
             ContactInfoView(session: session, peer: peer)
         }
+        // Messages count as seen while this chat is on screen (see `ProfileSession.chatOpened`).
+        .onAppear { session.chatOpened(peer) }
+        .onDisappear { session.chatClosed(peer) }
     }
 
     private var composer: some View {

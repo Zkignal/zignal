@@ -245,6 +245,8 @@ final class AppModel {
         // Whatever Zignal copied before this unlock (a message, an invite, an address) goes, so
         // it can't be pasted into the profile now opening: the other one may be the decoy.
         Clipboard.clearOurCopy()
+        // The daily reminder, if one is showing, has done its job.
+        Reminder.clearDelivered()
         if inBackground {
             session.close()
             phase = .locked

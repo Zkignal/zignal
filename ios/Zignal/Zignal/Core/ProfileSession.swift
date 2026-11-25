@@ -64,6 +64,8 @@ final class ProfileSession {
     @ObservationIgnored private var inbox: ZkwInbox
     @ObservationIgnored private var demo: ZkwInbox?
     @ObservationIgnored private var isClosed = false
+    /// The chat on screen right now, if any: what arrives for it is seen at once.
+    @ObservationIgnored private var openChat: Data?
     @ObservationIgnored private var walletRestored: Bool
     /// The block height typed when restoring (see `ProfileData.walletStartHeight`).
     private(set) var walletStartHeight: Int?
@@ -158,6 +160,27 @@ final class ProfileSession {
 
     func lastMessage(with peer: Data) -> ChatMessage? {
         messages.last { $0.peer == peer }
+    }
+
+    /// Received messages in this chat that haven't been on screen yet.
+    func unreadCount(with peer: Data) -> Int {
+        messages.filter { $0.peer == peer && $0.unread == true }.count
+    }
+
+    /// The chat with `peer` is on screen: its messages count as seen, now and for as long
+    /// as it stays open.
+    func chatOpened(_ peer: Data) {
+        openChat = peer
+        guard !isClosed, unreadCount(with: peer) > 0 else { return }
+        for i in messages.indices where messages[i].peer == peer && messages[i].unread == true {
+            messages[i].unread = nil
+        }
+        persist()
+    }
+
+    /// The chat with `peer` left the screen: what arrives for it from now on is new again.
+    func chatClosed(_ peer: Data) {
+        if openChat == peer { openChat = nil }
     }
 
     /// Called on lock. Stops the wallet, and stops any task still running from saving older
@@ -690,7 +713,10 @@ final class ProfileSession {
             if contact(peer) == nil {
                 contacts.append(Contact(id: peer, name: "New contact", added: Date()))
             }
-            messages.append(.incoming(text, from: peer, date: date))
+            var message = ChatMessage.incoming(text, from: peer, date: date)
+            // New until its chat has been on screen (see `chatOpened`).
+            if openChat != peer { message.unread = true }
+            messages.append(message)
         case .receipt, .reaction, .closed, .request, .bundle:
             break // Not used yet: contacts start from invites, and receipts would cost fees.
         }

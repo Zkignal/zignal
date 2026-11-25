@@ -1,6 +1,6 @@
 # Privacy
 
-Effective November 23, 2026.
+Effective November 25, 2026.
 
 Zignal is a private messenger that sends messages inside shielded Zcash transactions. There
 is no Zignal server and no Zignal account. We, the developer of Zignal, don't collect,
@@ -62,7 +62,11 @@ which delivers the app to testers.
   reads the code on the phone; no picture is saved or sent. You can paste the invite instead.
 - **Pasteboard:** what you copy in Zignal stays on this phone (no Universal Clipboard) and
   expires after 60 seconds. Locking the app removes it sooner.
-- Zignal doesn't ask for your contacts, photos, location, microphone or notifications.
+- **Notifications:** only if you turn on the daily reminder. Your iPhone makes it at the
+  time you pick; it says the same words every day and never whether anything arrived. No
+  push service and no server are involved, and Zignal still checks nothing while it's
+  locked.
+- Zignal doesn't ask for your contacts, photos, location or microphone.
 
 ## The demo website
 

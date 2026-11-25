@@ -100,6 +100,10 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     /// True for a failed message whose send was cut short by a lock or a crash, so nobody knows
     /// whether its transaction went out. Nil once a send has a known outcome.
     var interrupted: Bool?
+    /// True for a received message that hasn't been on screen yet: it arrived while its
+    /// chat wasn't open. Cleared when the chat is opened. Nil for every other message, and
+    /// in files saved before this existed.
+    var unread: Bool?
 
     static func outgoing(_ text: String, to peer: Data, memos: Int) -> ChatMessage {
         ChatMessage(id: UUID(), peer: peer, outgoing: true, text: text, date: Date(),
