@@ -14,6 +14,13 @@ the same commit.
 ## 2026-11-25
 
 ### Added
+- **"Remind me in": a reminder after a length of time you pick.** The Reminder screen has a
+  second part next to the daily reminder: a countdown set with two wheels (hours and
+  minutes, from 1 minute to 23 hours 59 minutes) that fires once, or again every time that
+  much time passes until it's turned off. Same words ("Zignal: Open to check"), silent, no
+  badge; kept only by iOS, the same for both profiles. A running countdown keeps going when
+  the screen is saved unchanged. PRIVACY.md says so (effective date moved). 4 new tests (144
+  app tests).
 - **New-message marks and an optional daily reminder.** A message that arrives while its
   chat isn't on screen is marked new on the chat list (a dot; VoiceOver reads the count)
   until the chat is opened; the mark is saved with the profile. A daily reminder can be
@@ -22,7 +29,7 @@ the same commit.
   and no server; Zignal still checks nothing while it's locked. The time is kept only by
   iOS, not in Zignal's files, and is the same for both profiles; unlocking clears a shown
   reminder. PRIVACY.md lists the notification permission, and its effective date moves to
-  this day. 6 new tests (140 app tests).
+  this day. 6 new tests (140 app tests). (`6c01d4d`)
 - **A crowd meter for cover fetches (Debug builds only).** The SDK prints to Xcode's
   console, for each batch of synced blocks, how many transactions carry Ironwood, Orchard
   or Sapling parts and how many Ironwood actions they have, and the size of each

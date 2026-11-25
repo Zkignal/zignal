@@ -35,7 +35,8 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 25 | **New-message marks and an optional daily reminder.** A message that arrives while its chat isn't on screen is marked new on the chat list until the chat is opened. A daily reminder can be turned on from the chat list: the iPhone makes it at the time you pick, it always says "Zignal: Open to check", and it never says whether anything arrived. | Nothing showed that a message had come in. Zignal can't look while it's locked, by design, and has no server to watch for you, so the reminder is a plain nudge: no push service, nothing checked in the background. |  |
+| Nov 25 | **"Remind me in": a reminder after a length of time you pick.** Next to the daily reminder, a countdown set with two wheels (hours and minutes) fires once, or again and again until it's turned off. Same words, "Zignal: Open to check", silent. | A time of day doesn't fit "check again in 10 minutes" or "every 2 hours". It's still a plain nudge made by the iPhone: no server, nothing checked in the background. |  |
+| Nov 25 | **New-message marks and an optional daily reminder.** A message that arrives while its chat isn't on screen is marked new on the chat list until the chat is opened. A daily reminder can be turned on from the chat list: the iPhone makes it at the time you pick, it always says "Zignal: Open to check", and it never says whether anything arrived. | Nothing showed that a message had come in. Zignal can't look while it's locked, by design, and has no server to watch for you, so the reminder is a plain nudge: no push service, nothing checked in the background. | `6c01d4d` |
 | Nov 23 | **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite that is scanned or pasted ends the camera there and then, before the first message is typed; a wrong or used invite leaves it on to scan again. | The camera stayed on, with its green dot, until the Add contact screen closed (a November test), though nothing needed it after the invite was read. | `147335f` |
 | Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | `c1ef831` |
 | Nov 21 | **Clean-up waits until the chain's time and the phone's clock agree; the next unlock clears Zignal's copy after a trip to the Home Screen; a chat's first messages say "sent, waiting for a first reply"; every unlock takes at least 0.75 seconds.** Dropping old prekeys (which ends the invites made from them), making an invite and giving up on a transaction that couldn't be read happen only while the two clocks are within a day of each other; otherwise the chat list says they don't match. A profile that came back without its chats says how to reach contacts again. | A light server reporting block times 22 or more days ahead could end every invite already handed out (a November 20 review). An iPhone changes the pasteboard's count by itself in the background, so the unlock left Zignal's copy for the other profile (November 19 and 21 tests). After a restore nothing said that contacts need a new invite (a November 20 test). A first message showed "delivered" before anything showed the contact could read it, and the time an unlock took could hint at which profile opened (November 18 reviews). | `331e76a` |
@@ -86,7 +87,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-140 app tests and 2 UI tests pass.
+144 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -556,7 +557,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 140 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 144 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -693,8 +694,9 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   default for new profiles now, so this update matters more.
 - **Open app only:** messages arrive while the app is unlocked and synced. There are no push
   notifications, which would need a Zignal server. What arrived is marked new on the chat
-  list, and an optional daily reminder (a notification your iPhone makes, the same words
-  every day) can nudge you to open the app; it can't know whether anything arrived.
+  list, and optional reminders (notifications your iPhone makes, always the same words:
+  every day at a time you pick, or after a length of time you pick) can nudge you to open
+  the app; they can't know whether anything arrived.
 - **Cost and delay:** each message costs a normal network fee and arrives after about one block
   plus a sync.
 - **Wallet files:** the Zcash SDK stores each wallet in a plaintext database, protected by iOS
@@ -906,6 +908,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-23 | `147335f` | `dev` and `main`: the camera turns off as soon as an invite is read |
 | 2026-11-23 | `51c8a45` | `dev` and `main`: PRIVACY.md and the README say what the light server learns (tag `private-testing-3`) |
 | 2026-11-25 | `faac4b8` | `dev`: Debug builds measure how crowded the synced blocks are |
+| 2026-11-25 | `6c01d4d` | `dev`: new messages are marked on the chat list; an optional daily reminder |
 
 ## Credits
 

@@ -2123,4 +2123,58 @@ struct ReminderTests {
         #expect(Reminder.Time(hour: 0, minute: 60) == nil)
         #expect(Reminder.Time(hour: 0, minute: -1) == nil)
     }
+
+    @Test func aCountdownSaysTheSameWordsAndWaitsThePickedTime() throws {
+        let interval = try #require(Reminder.Interval(hours: 1, minutes: 30))
+        #expect(interval.seconds == 5_400)
+        for repeats in [false, true] {
+            let request = Reminder.request(after: Reminder.Countdown(interval: interval, repeats: repeats))
+            #expect(request.identifier == Reminder.countdownIdentifier)
+            #expect(request.content.title == "Zignal")
+            #expect(request.content.body == "Open to check")
+            #expect(request.content.subtitle.isEmpty)
+            #expect(request.content.userInfo.isEmpty)
+            #expect(request.content.attachments.isEmpty)
+            #expect(request.content.badge == nil)
+            #expect(request.content.sound == nil)
+            let trigger = try #require(request.trigger as? UNTimeIntervalNotificationTrigger)
+            #expect(trigger.timeInterval == 5_400)
+            #expect(trigger.repeats == repeats)
+        }
+    }
+
+    @Test func theCountdownIsReadBackWithItsRepeat() throws {
+        let short = try #require(Reminder.Interval(hours: 0, minutes: 5))
+        let long = try #require(Reminder.Interval(hours: 23, minutes: 59))
+        for interval in [short, long] {
+            for repeats in [false, true] {
+                let countdown = Reminder.Countdown(interval: interval, repeats: repeats)
+                #expect(Reminder.countdown(of: Reminder.request(after: countdown)) == countdown)
+            }
+        }
+    }
+
+    @Test func theDailyReminderAndTheCountdownAreKeptApart() throws {
+        let time = try #require(Reminder.Time(hour: 21, minute: 0))
+        let interval = try #require(Reminder.Interval(hours: 0, minutes: 10))
+        let daily = Reminder.request(at: time)
+        let countdown = Reminder.request(after: Reminder.Countdown(interval: interval, repeats: false))
+        #expect(daily.identifier != countdown.identifier)
+        #expect(Reminder.countdown(of: daily) == nil)
+        #expect(Reminder.time(of: countdown) == nil)
+        // A notification under another name isn't the countdown.
+        let other = UNNotificationRequest(identifier: "other", content: countdown.content,
+                                          trigger: countdown.trigger)
+        #expect(Reminder.countdown(of: other) == nil)
+    }
+
+    @Test func aCountdownIsAtLeastAMinuteAndLessThanADay() {
+        #expect(Reminder.Interval(hours: 0, minutes: 0) == nil)
+        #expect(Reminder.Interval(hours: 0, minutes: 1) != nil)
+        #expect(Reminder.Interval(hours: 23, minutes: 59) != nil)
+        #expect(Reminder.Interval(hours: 24, minutes: 0) == nil)
+        #expect(Reminder.Interval(hours: -1, minutes: 30) == nil)
+        #expect(Reminder.Interval(hours: 0, minutes: 60) == nil)
+        #expect(Reminder.Interval(hours: 1, minutes: -1) == nil)
+    }
 }

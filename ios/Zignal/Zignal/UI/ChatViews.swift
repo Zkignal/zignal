@@ -67,7 +67,7 @@ struct ChatListView: View {
                 Section {
                     Button("Reminder", systemImage: "bell") { showReminder = true }
                 } footer: {
-                    Text("An optional daily nudge to open Zignal. It never says whether anything arrived.")
+                    Text("An optional nudge to open Zignal: every day, or after a length of time you pick. It never says whether anything arrived.")
                 }
             }
             .navigationTitle("Chats")
