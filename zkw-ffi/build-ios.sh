@@ -25,13 +25,17 @@ CARGO_ENCODED_RUSTFLAGS="$(printf '%s\037%s\037%s' \
 export CARGO_ENCODED_RUSTFLAGS
 export CFLAGS="-ffile-prefix-map=$HOME=/build"
 
+# The oldest iOS the library supports, as in the SDK's build script: not newer than the app's
+# minimum (17.0). rustc and the C compiler both read it. Override it in the environment if needed.
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+
 echo "==> Tests"
-cargo test --offline
+cargo test --offline --locked
 
 echo "==> Build: iPhone, simulator, host (host is only for generating bindings)"
-cargo build --offline --release --target aarch64-apple-ios
-cargo build --offline --release --target aarch64-apple-ios-sim
-cargo build --offline --release
+cargo build --offline --locked --release --target aarch64-apple-ios
+cargo build --offline --locked --release --target aarch64-apple-ios-sim
+cargo build --offline --locked --release
 
 echo "==> Identity check"
 needles=("$HOME")
@@ -40,6 +44,12 @@ account="$(id -un)"
 for t in aarch64-apple-ios aarch64-apple-ios-sim; do
   lib="target/$t/release/libzkw_ffi.a"
   [ -s "$lib" ] || fail "missing $lib"
+  # The newest minimum iOS of any object in the library must not exceed the target above.
+  newest="$(xcrun otool -l "$lib" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{split($2,v,"."); n=v[1]*1000+v[2]; if(n>m){m=n; s=$2} f=0} END{print s}' || true)"
+  [ -n "$newest" ] || fail "couldn't read the minimum iOS version of $lib"
+  awk -v a="$newest" -v b="$IPHONEOS_DEPLOYMENT_TARGET" 'BEGIN{split(a,x,".");split(b,y,"."); exit !((x[1]+0<y[1]+0)||(x[1]+0==y[1]+0 && x[2]+0<=y[2]+0))}' ||
+    fail "$lib has code that needs iOS $newest, newer than iOS $IPHONEOS_DEPLOYMENT_TARGET"
+  echo "$lib: needs iOS $newest or later"
   for needle in "${needles[@]}"; do
     n="$({ LC_ALL=C grep -a -o -F -- "$needle" "$lib" || true; } | wc -l | tr -d ' ')"
     [ "$n" = 0 ] || fail "$lib still contains this Mac's account name or home folder ($n times). Don't use or ship it."
@@ -49,7 +59,7 @@ done
 
 echo "==> Generate Swift bindings"
 rm -rf out && mkdir -p out/swift out/headers
-cargo run --offline --release --bin uniffi-bindgen -- generate \
+cargo run --offline --locked --release --bin uniffi-bindgen -- generate \
   --library target/release/libzkw_ffi.dylib --language swift --out-dir out/swift
 cp out/swift/zkw_ffiFFI.h out/headers/
 cp out/swift/zkw_ffiFFI.modulemap out/headers/module.modulemap

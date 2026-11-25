@@ -32,6 +32,9 @@ final class WalletEngine {
         /// can be scanned before older ones, so a reply can show up before the message that
         /// started its chat.
         var complete = false
+        /// A block time the light server gave was more than a day away from what its height
+        /// says (`HeightClock`); the height's time was used.
+        var timesMismatch = false
     }
 
     private(set) var phase: Phase = .starting
@@ -164,9 +167,18 @@ final class WalletEngine {
     func snapshot(skipping processed: Set<Data>) async throws -> Snapshot {
         guard let sync = synchronizer, let account else { return Snapshot() }
         // For a transaction not in a block yet: the chain's time, never the phone's.
-        let chainNow = await chainTime()
+        let scanned = try? await sync.latestScannedBlock()
+        let chainNow = scanned.flatMap {
+            ChainClock.time(scannedHeight: $0.height, scannedTime: $0.time,
+                            tipHeight: sync.latestState.latestBlockHeight)
+        }
         var snapshot = Snapshot()
         snapshot.complete = phase == .ready
+        // The newest scanned block's own time, checked against its height.
+        if let scanned,
+           HeightClock.reading(claimed: UInt64(max(0, scanned.time)), height: scanned.height)?.mismatch == true {
+            snapshot.timesMismatch = true
+        }
         // The SDK lists newest first. Messages are read oldest first, as they were sent.
         let transactions = try await sync.allTransactions()
             .filter { $0.accountUUID == account.id }
@@ -177,9 +189,16 @@ final class WalletEngine {
             guard !tx.isSentTransaction, !processed.contains(tx.rawID) else { continue }
             let outputs = await sync.getTransactionOutputs(for: tx).map(Self.reduce)
             guard let memos = IncomingMemos.extract(from: outputs) else { continue }
-            // Not in a block yet and the chain's time unknown: it comes back on a later call.
-            guard let time = tx.blockTime.map({ UInt64(max(0, $0)) }) ?? chainNow else { continue }
-            snapshot.incoming.append((tx.rawID, time, memos))
+            // The block's time, checked against its height (`HeightClock`): a time more than a
+            // day off is replaced by the height's, so a server can't move the time a message
+            // is read at (the core also clears its replay records by it). Not in a block yet:
+            // the chain's time, checked the same way; still unknown, it comes back later.
+            let claimed = tx.blockTime.map { UInt64(max(0, $0)) } ?? chainNow
+            let height = tx.minedHeight ?? (tx.blockTime == nil ? scanned?.height : nil)
+            guard claimed != nil || tx.minedHeight != nil,
+                  let reading = HeightClock.reading(claimed: claimed, height: height) else { continue }
+            if reading.mismatch { snapshot.timesMismatch = true }
+            snapshot.incoming.append((tx.rawID, reading.time, memos))
         }
         return snapshot
     }
@@ -543,5 +562,20 @@ enum WalletShutdown {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return true
+    }
+}
+
+/// The full check of a contact's address, made when a chat starts from an invite.
+/// `PaymentRequest.isShieldedAddress` looks only at the characters; this also has the SDK decode
+/// the address: a mainnet Unified Address with the right checksum and an Orchard receiver, as
+/// every Zignal invite's address has. A damaged address is refused at once, instead of failing
+/// at the first send after the contact was saved.
+enum ContactAddress {
+    static func isValid(_ address: String) -> Bool {
+        guard PaymentRequest.isShieldedAddress(address),
+              let unified = try? UnifiedAddress(encoding: address, network: .mainnet),
+              let receivers = try? unified.availableReceiverTypecodes()
+        else { return false }
+        return receivers.contains(.orchard)
     }
 }

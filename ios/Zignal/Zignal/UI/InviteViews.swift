@@ -196,7 +196,7 @@ struct AcceptInviteView: View {
             errorText = ZignalError.invalidInvite.errorDescription
             return
         }
-        guard let address = InviteCode.address(invite), PaymentRequest.isShieldedAddress(address) else {
+        guard let address = InviteCode.address(invite), ContactAddress.isValid(address) else {
             errorText = ZignalError.invalidAddress.errorDescription
             return
         }

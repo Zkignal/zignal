@@ -49,9 +49,11 @@ which delivers the app to testers.
   shows who reads which message and, if the same server saw it sent, who wrote to whom.
 - **Tor on (the default for new profiles):** sending and reading go through Tor, so the
   server sees a Tor exit instead of your IP address. Block downloads still connect directly,
-  so the server learns that you use Zcash and when you sync, and it may link the
-  transactions you read to that sync by their timing. The Tor network's entry relay sees
-  your IP address but not what you send.
+  and so does the wallet's live feed of new transactions (the ones not mined yet, the same
+  for every wallet), which stays open while the app is unlocked so that a message shows up
+  within seconds. So the server learns that you use Zcash and when the app is open, and it
+  may link the transactions you read to that by their timing. The Tor network's entry relay
+  sees your IP address but not what you send.
 - **What helps today:** keep Tor on (Network settings), add a VPN with a kill switch, or use
   a light server you run yourself.
 - The README's [network privacy](README.md#network-privacy-tor-a-vpn-or-your-own-server)

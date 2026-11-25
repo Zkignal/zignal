@@ -1331,6 +1331,70 @@ struct ChainClockTests {
     }
 }
 
+/// The height clock (`HeightClock`): the chain's time from block height alone, to check the block
+/// times a light server supplies.
+struct HeightClockTests {
+    /// Its anchors are checkpoints the SDK ships, and the newest one the SDK ships is the last.
+    /// When an SDK update adds a newer checkpoint, this fails until it is added as an anchor.
+    @Test func anchorsAreTheBundledCheckpoints() throws {
+        let files = (FileManager.default.enumerator(at: Bundle.main.bundleURL, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? [])
+            .filter { $0.pathExtension == "json" && $0.deletingLastPathComponent().lastPathComponent == "mainnet" }
+        let heights = files.compactMap { Int($0.deletingPathExtension().lastPathComponent) }
+        #expect(heights.max() == HeightClock.anchors.last?.height)
+        for anchor in HeightClock.anchors {
+            let url = try #require(files.first { $0.lastPathComponent == "\(anchor.height).json" })
+            let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+            #expect(json["height"] as? String == String(anchor.height))
+            #expect((json["time"] as? Int).map { UInt64($0) } == anchor.time)
+        }
+    }
+
+    @Test func theHeightClockFollowsTheBlockSpacing() throws {
+        // Exact at the anchors.
+        #expect(HeightClock.time(at: 3_390_000) == 1_782_372_852)
+        #expect(HeightClock.time(at: 3_565_000) == 1_794_477_230)
+        // 25 seconds a block since NU7: a day is 3,456 blocks.
+        #expect(HeightClock.time(at: 3_565_000 + 3_456) == 1_794_477_230 + 86_400)
+        #expect(HeightClock.elapsed(from: 3_543_404, to: 3_543_406) == 75 + 25)
+        #expect(HeightClock.elapsed(from: 3_543_406, to: 3_543_404) == -(75 + 25))
+        // Measured Nov 25, 2026: block 3,611,014 near 17:20 UTC.
+        let tip = try #require(HeightClock.time(at: 3_611_014))
+        #expect(tip > 1_795_627_200 - 3_600 && tip < 1_795_627_200 + 3_600)
+        // Later blocks are later; nothing below the oldest anchor.
+        var previous: UInt64 = 0
+        for height in stride(from: 3_390_000, through: 3_700_000, by: 5_000) {
+            let time = try #require(HeightClock.time(at: height))
+            #expect(time > previous)
+            previous = time
+        }
+        #expect(HeightClock.time(at: 3_389_999) == nil)
+    }
+
+    /// A block time more than a day from its height's time is replaced by it and flagged, so a
+    /// server can't move the time a message is read at (and the core's replay records) by weeks.
+    @Test func blockTimesFarFromTheHeightAreReplaced() throws {
+        let height = 3_600_000
+        let expected = try #require(HeightClock.time(at: height))
+        let near = try #require(HeightClock.reading(claimed: expected + 3_600, height: height))
+        #expect(near.time == expected + 3_600 && !near.mismatch)
+        let edge = try #require(HeightClock.reading(claimed: expected + 86_400, height: height))
+        #expect(edge.time == expected + 86_400 && !edge.mismatch)
+        let ahead = try #require(HeightClock.reading(claimed: expected + 31 * 86_400, height: height))
+        #expect(ahead.time == expected && ahead.mismatch)
+        let behind = try #require(HeightClock.reading(claimed: expected - 2 * 86_400, height: height))
+        #expect(behind.time == expected && behind.mismatch)
+        let noClaim = try #require(HeightClock.reading(claimed: nil, height: height))
+        #expect(noClaim.time == expected && !noClaim.mismatch)
+        // Without a height, or below the oldest anchor: the server's time as it is.
+        let unknown = try #require(HeightClock.reading(claimed: 42, height: nil))
+        #expect(unknown.time == 42 && !unknown.mismatch)
+        let old = try #require(HeightClock.reading(claimed: 42, height: 1_000_000))
+        #expect(old.time == 42 && !old.mismatch)
+        #expect(HeightClock.reading(claimed: nil, height: nil) == nil)
+    }
+}
+
 struct FirstReplyTests {
     @Test func aChatWaitsForItsFirstReply() {
         let peer = Data(repeating: 7, count: 32)
@@ -1905,6 +1969,23 @@ struct WalletDateTests {
         #expect(WalletDates.earliest < WalletDates.zignalFirst)
         #expect(WalletDates.zignalFirst < Date())
     }
+
+    /// A restored profile's Network settings can be changed before "Find my funds", so its
+    /// first sync already uses the chosen server and Tor setting.
+    @Test func networkSettingsCanBeChangedBeforeTheWalletStarts() async throws {
+        let store = try makeTempStore()
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let session = try await ProfileSession.open(keys: keys, store: store)
+        #expect(session.walletDateNeeded)
+        let chosen = WalletSettings(servers: [WalletSettings.Server(host: "node.example", port: 9067)],
+                                    torEnabled: false)
+        await session.updateWalletSettings(chosen)
+        #expect(session.walletSettings == chosen)
+        #expect(session.wallet == nil)
+        #expect(session.walletDateNeeded)
+        let saved = try #require(try store.load(keys))
+        #expect(saved.walletSettings == chosen)
+    }
 }
 
 /// Where a restored wallet starts: a typed block height, a picked date, both or neither.
@@ -2176,5 +2257,31 @@ struct ReminderTests {
         #expect(Reminder.Interval(hours: -1, minutes: 30) == nil)
         #expect(Reminder.Interval(hours: 0, minutes: 60) == nil)
         #expect(Reminder.Interval(hours: 1, minutes: -1) == nil)
+    }
+}
+
+/// The full check of an invite's address before a chat starts (`ContactAddress`). The addresses
+/// below were made for this test (the ZIP 316 encoding of fixed bytes): no wallet holds them.
+struct ContactAddressTests {
+    static let orchardOnly = "u18ty6gm2w7ych9ynzgs072r8cz4hadh5ddp2ckya4d0ncyydwgx64sl63ddhntwscxt7dvlhnnuf4vpp9kl38e34kkfr3n744kyyfq5w8"
+    static let saplingOnly = "u1mvjqs5z5nfvwe9ts2rjqyhj57ewvqds9n3hz8rt5zuqamwydew75lzd7kmg5khqpeacx2suswh7vlggxjyxej4et2jrhp0cv6ylpjzuv"
+    static let saplingAndOrchard = "u1tvhr9fg96kusecjatcwqsv5827trd9gxv6m7yue4a9j4gc5s02g5y8g4uxcqexcvyrju7f56j34l6lqugl0pny7dn9w4m9ulj4qjqw752zc8k8nz0xrsndvl5v5msqf733q2e8nejtxuez2z3v85amwuevel2u7tl8ceuueguvr2t79f"
+
+    @Test func anInvitesAddressMustDecodeAndHaveAnOrchardReceiver() {
+        #expect(ContactAddress.isValid(Self.orchardOnly))
+        #expect(ContactAddress.isValid(Self.saplingAndOrchard))
+        // No Orchard receiver: Zignal's invites always have one.
+        #expect(!ContactAddress.isValid(Self.saplingOnly))
+        // The right characters but a wrong checksum: the character check alone lets them through.
+        let damaged = Self.orchardOnly.replacingOccurrences(of: "x64sl", with: "x6qsl")
+        #expect(damaged != Self.orchardOnly)
+        #expect(PaymentRequest.isShieldedAddress(damaged))
+        #expect(!ContactAddress.isValid(damaged))
+        #expect(PaymentRequest.isShieldedAddress(sampleAddress))
+        #expect(!ContactAddress.isValid(sampleAddress))
+        // What the character check refuses stays refused.
+        #expect(!ContactAddress.isValid(Self.orchardOnly + "&amount=5"))
+        #expect(!ContactAddress.isValid(Self.orchardOnly.uppercased()))
+        #expect(!ContactAddress.isValid(""))
     }
 }

@@ -33,8 +33,8 @@ releases came out on October 21-22, 2026.
   - Patch releases with security fixes: `tokio` 1.53.3 (RUSTSEC-2026-0386), and, used by arti,
     the Tor client, `zstd` 0.13.4, `zstd-safe` 7.4.0, `zstd-sys` 2.1.2 (RUSTSEC-2026-0391,
     -0398, -0403, -0410) and `event-listener` 5.4.2 (RUSTSEC-2026-0221).
-  - RustSec advisories left in `Cargo.lock` (November 14, 2026):
-    - through arti, which Zignal leaves off by default, with no compatible fix: `rsa`
+  - RustSec advisories left in `Cargo.lock` (November 25, 2026):
+    - through arti, the Tor client (on for new profiles), with no compatible fix: `rsa`
       (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
       only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; SSH key parsing for
       onion services, which Zignal doesn't use). They clear when arti moves to newer versions;
@@ -46,7 +46,11 @@ releases came out on October 21-22, 2026.
     - `rustix` 1.1.4 (RUSTSEC-2026-0486, informational): unsound when an extended-attribute
       call gets an empty buffer. It comes in through `tempfile` (used by arti and
       `libzcashlc`); Zignal makes no such call. Version 1.1.6 fixes it and is a compatible
-      update; it isn't in the lock yet.
+      update; it isn't in the lock yet;
+    - `url` 2.5.8 (RUSTSEC-2026-0592): `Url::origin()` on a URL with thousands of nested
+      `blob:` prefixes overflows the stack. It comes in through arti; neither Zignal nor
+      `rust/` calls `origin()`. Version 2.5.9 fixes it and is a compatible update, for the
+      next rebuild of this library.
   - EIP-681 parsing and the Orchard-to-Ironwood pool migration are left out; Zignal doesn't use
     them. `rust/src/eip681.rs` and `rust/src/migration.rs` are stubs that
     `Scripts/gen_stubs.py` generates from the upstream files of the same name: same C

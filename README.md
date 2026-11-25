@@ -35,7 +35,8 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 25 | **"Remind me in": a reminder after a length of time you pick.** Next to the daily reminder, a countdown set with two wheels (hours and minutes) fires once, or again and again until it's turned off. Same words, "Zignal: Open to check", silent. | A time of day doesn't fit "check again in 10 minutes" or "every 2 hours". It's still a plain nudge made by the iPhone: no server, nothing checked in the background. |  |
+| Nov 25 | **Fixes from an outside review.** Block times from the light server are checked against a clock worked out from block height alone (no phone clock); a time more than a day off is replaced by the height's and the chat list says so; an invite's address is fully checked (checksum, mainnet, Orchard receiver) before a chat starts; a restored profile can open Network settings before "Find my funds"; a failed save while starting the demo chat puts its keys back too. PRIVACY.md and the README name the wallet's live feed of new transactions, which connects directly even with Tor on. | A light server that dates a block weeks ahead could move the time messages are read at, and empty the app's replay records; a damaged address failed only at the first send; the first sync of a restored profile couldn't use a chosen server or Tor setting; the feed wasn't listed among the direct connections. |  |
+| Nov 25 | **"Remind me in": a reminder after a length of time you pick.** Next to the daily reminder, a countdown set with two wheels (hours and minutes) fires once, or again and again until it's turned off. Same words, "Zignal: Open to check", silent. | A time of day doesn't fit "check again in 10 minutes" or "every 2 hours". It's still a plain nudge made by the iPhone: no server, nothing checked in the background. | `d7e1793` |
 | Nov 25 | **New-message marks and an optional daily reminder.** A message that arrives while its chat isn't on screen is marked new on the chat list until the chat is opened. A daily reminder can be turned on from the chat list: the iPhone makes it at the time you pick, it always says "Zignal: Open to check", and it never says whether anything arrived. | Nothing showed that a message had come in. Zignal can't look while it's locked, by design, and has no server to watch for you, so the reminder is a plain nudge: no push service, nothing checked in the background. | `6c01d4d` |
 | Nov 23 | **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite that is scanned or pasted ends the camera there and then, before the first message is typed; a wrong or used invite leaves it on to scan again. | The camera stayed on, with its green dot, until the Add contact screen closed (a November test), though nothing needed it after the invite was read. | `147335f` |
 | Nov 21 | **Tor is on for new profiles.** New setups and restores, a profile whose saved data isn't on the phone, and Restore defaults start with Tor on, so the server sees a Tor exit instead of the phone's IP address when messages are sent and fetched. Blocks still download directly. Profiles made before keep the setting they had. | The server that sees one IP address send a transaction and another fetch it learns who writes to whom, and most people never open the network settings. With Tor off the wallet starts faster: it can still be switched off per profile. | `c1ef831` |
@@ -87,7 +88,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-144 app tests and 2 UI tests pass.
+149 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -449,8 +450,10 @@ address and when, is a separate problem, and the app can only solve part of it.
 - **Tor on (the default for new profiles):** sending, fetching transactions, checking the
   server and reading the chain tip go over Tor, so the server sees a Tor exit instead of
   your IP address. Syncing still connects directly: downloading blocks, tree states and
-  subtree roots, which are the same for every wallet. The server learns that you use Zcash
-  and when you sync. It doesn't see your IP address on the transactions the wallet fetches
+  subtree roots, which are the same for every wallet. So does the wallet's live feed of new
+  transactions (the mempool stream, also the same for every wallet), which stays open while
+  the app is unlocked so that a message shows up within seconds instead of after it is
+  mined. The server learns that you use Zcash, when you sync and when the app is open. It doesn't see your IP address on the transactions the wallet fetches
   over Tor, but it may link them to your sync by timing: the wallet fetches them right after
   it has downloaded, directly, the blocks that hold them. On a quiet server, or after a long
   time offline, such a fetch can stand out. Tor depends on no single company, but it's
@@ -557,7 +560,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 144 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 149 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -610,7 +613,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   links who messaged when to an IP, even though the contents stay encrypted. Tor is on for
   new profiles; a profile made by an earlier version keeps the setting it had. The
   Zcash SDK's Tor covers sending and fetching; syncing (blocks, tree states, subtree roots)
-  still connects directly, and the wallet sends no transparent addresses at all. Your own
+  and the live feed of new transactions still connect directly, and the wallet sends no
+  transparent addresses at all. Your own
   server removes the third party entirely. A VPN with a kill switch and a no-logs provider,
   together with Tor, covers the rest (see
   [Network privacy](#network-privacy-tor-a-vpn-or-your-own-server)).
@@ -667,7 +671,7 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 - **Message length shows in the fee:** each memo adds an output, so the fee (and the number of
   actions in the transaction) shows roughly how long a message was. Padding to fixed sizes
   would hide it at a higher fee; that's on the roadmap.
-- **Remaining RustSec advisories** in the SDK's dependencies (checked November 17, 2026):
+- **Remaining RustSec advisories** in the SDK's dependencies (checked November 25, 2026):
   - through arti (the Tor client, on for new profiles), with no compatible fix yet: `rsa`
     (RUSTSEC-2023-0071; the Marvin attack targets private-key decryption, and a Tor client
     only verifies signatures) and `crypto-bigint` (RUSTSEC-2026-0387; used for SSH key
@@ -679,12 +683,17 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   - `rustix` 1.1.4 (RUSTSEC-2026-0486, informational): unsound when an extended-attribute
     call gets an empty buffer. It comes in through `tempfile`; Zignal makes no such call.
     Version 1.1.6 fixes it and is a compatible update; it isn't in the lock yet;
+  - `url` 2.5.8 (RUSTSEC-2026-0592): `Url::origin()` on a URL with thousands of nested
+    `blob:` prefixes overflows the stack. It comes in through arti; neither Zignal nor the
+    SDK's Rust code calls `origin()`. Version 2.5.9 fixes it and is a compatible update;
+    it goes into the lock with the next rebuild of the SDK's Rust library;
   - `chrono` and `humantime` are marked unmaintained (RUSTSEC-2026-0543 and
     RUSTSEC-2026-0542, informational): no known vulnerability;
   - `bincode` 2.0.1 and `paste` 1.0.15 are marked unmaintained too (informational);
-  - in `zkw-ffi`'s own lock file, `basic-toml` 0.1.10 (RUSTSEC-2026-0374) and `bincode` 1.3.3
-    (RUSTSEC-2025-0141) are marked unmaintained (informational): no known vulnerability.
-    Both come in through UniFFI, which generates the Swift bindings.
+  - in `zkw-ffi`'s own lock file, `basic-toml` 0.1.10 (RUSTSEC-2026-0374), `bincode` 1.3.3
+    (RUSTSEC-2025-0141) and `paste` 1.0.15 (RUSTSEC-2024-0436) are marked unmaintained
+    (informational): no known vulnerability. All three come in through UniFFI, which
+    generates the Swift bindings.
 
   Details in `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`.
 - **Tor library version:** the Tor client (arti 0.43) dates from around June 2026. Arti 2.8.0
@@ -909,6 +918,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-23 | `51c8a45` | `dev` and `main`: PRIVACY.md and the README say what the light server learns (tag `private-testing-3`) |
 | 2026-11-25 | `faac4b8` | `dev`: Debug builds measure how crowded the synced blocks are |
 | 2026-11-25 | `6c01d4d` | `dev`: new messages are marked on the chat list; an optional daily reminder |
+| 2026-11-25 | `d7e1793` | `dev`: a reminder after a length of time, once or repeating |
 
 ## Credits
 

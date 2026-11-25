@@ -23,6 +23,10 @@ final class ProfileSession {
     /// `ChainClock.disagree`). The chat list says so; until they agree again, no invite is made
     /// and clean-up that can't be undone waits.
     private(set) var clocksDisagree = false
+    /// True once, while unlocked, the light server gave a block time more than a day away from
+    /// what the block's height says (`HeightClock`). Messages are read at the height's time
+    /// then; the chat list suggests another server.
+    private(set) var serverTimesMismatch = false
     /// True for a profile that came back without its chats (from its recovery phrase, or after
     /// its file wasn't on the phone) and has no contact yet: the chat list says how to reach
     /// contacts again.
@@ -443,6 +447,7 @@ final class ProfileSession {
             do {
                 let snapshot = try await wallet.snapshot(skipping: Set(processedTransactions))
                 guard !isClosed else { return }
+                if snapshot.timesMismatch, !serverTimesMismatch { serverTimesMismatch = true }
                 var changed = false
                 let incoming = snapshot.incoming
                 // The chain's time; nil while it isn't known.
@@ -599,7 +604,7 @@ final class ProfileSession {
                 throw ZignalError.invalidInvite
             }
             // Checked before any keys are made: the first message goes to this address.
-            guard let theirs = InviteCode.address(invite), PaymentRequest.isShieldedAddress(theirs) else {
+            guard let theirs = InviteCode.address(invite), ContactAddress.isValid(theirs) else {
                 throw ZignalError.invalidAddress
             }
             try requireUsable(invite, replacing: replacing)
@@ -658,9 +663,11 @@ final class ProfileSession {
             let bot = try ZkwInbox(seed: keys.subkeyBytes(KeyLabel.demoIdentity), now: now)
             let invite = try bot.createInvite(myAddress: Data("demo:contact".utf8))
             let first = "Hi! Testing Zignal."
+            let botId = try bot.myId()
+            // As in `send`: if the save fails, the inbox goes back too (`rollBack(to:)`).
+            let before = try inboxBefore()
             let out = try inbox.startFromInvite(invite: invite, myAddress: Data("demo:me".utf8),
                                                 firstText: first)
-            let botId = try bot.myId()
             contacts.append(Contact(id: botId, name: "Demo contact", isDemo: true, added: Date()))
             demo = bot
             do {
@@ -668,6 +675,7 @@ final class ProfileSession {
             } catch {
                 contacts.removeAll { $0.id == botId }
                 demo = nil
+                rollBack(to: before)
                 throw error
             }
             await deliverToDemo(out.memos)

@@ -38,6 +38,14 @@ struct ChatListView: View {
                         Text("They are more than a day apart. Until that's fixed, messages you send may not arrive and new invites can't be made. Check Date & Time in the Settings app. If the phone's date is right, the server may be wrong: choose another one under Network.")
                     }
                 }
+                if session.serverTimesMismatch {
+                    Section {
+                        Label("This server's block times don't match the chain",
+                              systemImage: "exclamationmark.triangle")
+                    } footer: {
+                        Text("A block's date was more than a day away from what its place in the chain says. Zignal read the messages by the chain's height instead, so nothing is lost. If this keeps showing after the next unlock, choose another server under Network.")
+                    }
+                }
                 if session.cameBackWithoutChats {
                     Section {
                         Label("This profile came back without its chats", systemImage: "arrow.counterclockwise")
@@ -412,6 +420,7 @@ private struct WalletDateSection: View {
     let session: ProfileSession
     @State private var heightText = ""
     @State private var created: Date?
+    @State private var showSettings = false
 
     var body: some View {
         let height = WalletStart.check(heightText)
@@ -421,11 +430,15 @@ private struct WalletDateSection: View {
                 Task { await session.setWalletStart(date: created, height: height.value) }
             }
             .disabled(!height.isUsable)
+            // Before the first sync, so it already uses the server and Tor setting chosen here.
+            Button("Network settings", systemImage: "network") { showSettings = true }
+                .sheet(isPresented: $showSettings) { WalletSettingsView(session: session) }
         } header: {
             Text("When was this wallet created?")
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
                 Text("This profile's chats weren't on this phone, for example after restoring a phone backup, so they start empty. Its funds are still on the chain.")
+                Text("To choose the server or the Tor setting for the first sync, open Network settings before Find my funds.")
                 WalletStartFooter(height: height)
             }
         }

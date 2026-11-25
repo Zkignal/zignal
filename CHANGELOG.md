@@ -13,14 +13,35 @@ the same commit.
 
 ## 2026-11-25
 
+### Security
+- **A light server can no longer move the time messages are read at.** Block times come from
+  the light server, and the core reads each message, and clears its 30-day replay records,
+  by that time. Zignal now checks every block time against a clock worked out from block
+  height alone (`HeightClock`: checkpoints the SDK ships and the block spacing each network
+  upgrade sets; no phone clock, no network). A time more than a day off is replaced by the
+  height's, the message is read as usual, and the chat list says the server's times don't
+  match the chain. A test fails when an SDK update ships a newer checkpoint, so the clock's
+  anchor moves with it. From an outside review.
+- **An invite's address is fully checked before a chat starts.** Besides its characters, the
+  SDK now decodes it: a mainnet Unified Address with the right checksum and an Orchard
+  receiver (`ContactAddress`). A damaged address is refused on the Add contact screen
+  instead of failing at the first send after the contact was saved.
+
+### Fixed
+- **Starting the demo chat puts its keys back when the save fails** (a full disk), as
+  sending and accepting an invite already did.
+
 ### Added
+- **Network settings before "Find my funds".** A profile whose saved data wasn't on the
+  phone can choose its server and the Tor setting before its wallet's first sync. 5 new
+  tests (149 app tests).
 - **"Remind me in": a reminder after a length of time you pick.** The Reminder screen has a
   second part next to the daily reminder: a countdown set with two wheels (hours and
   minutes, from 1 minute to 23 hours 59 minutes) that fires once, or again every time that
   much time passes until it's turned off. Same words ("Zignal: Open to check"), silent, no
   badge; kept only by iOS, the same for both profiles. A running countdown keeps going when
   the screen is saved unchanged. PRIVACY.md says so (effective date moved). 4 new tests (144
-  app tests).
+  app tests). (`d7e1793`)
 - **New-message marks and an optional daily reminder.** A message that arrives while its
   chat isn't on screen is marked new on the chat list (a dot; VoiceOver reads the count)
   until the chat is opened; the mark is saved with the profile. A daily reminder can be
@@ -37,6 +58,17 @@ the same commit.
   stored or sent. Release and TestFlight builds don't contain it. Its numbers size the
   planned cover fetches (roadmap). The SDK change is in
   `vendor/zcash-swift-wallet-sdk/ZIGNAL-PATCHES.md`. (`faac4b8`)
+
+### Documentation
+- **The wallet's live feed of new transactions is named.** PRIVACY.md (effective date
+  moved), the README, SECURITY.md and the Network screen say that this feed (the mempool
+  stream, the same for every wallet) connects directly even with Tor on and stays open while
+  the app is unlocked. It lets a message show up within seconds; routing it over Tor comes
+  with syncing over Tor.
+- **Advisories brought up to date:** `url` 2.5.8 (RUSTSEC-2026-0592) in the SDK's lock and
+  `paste` 1.0.15 in `zkw-ffi`'s are listed; ZIGNAL-PATCHES.md no longer says Tor is off by
+  default. `zkw-ffi/build-ios.sh` builds with `--locked`, for iOS 17.0, and checks the
+  library's minimum iOS, as the SDK's build script does.
 
 ## 2026-11-23
 

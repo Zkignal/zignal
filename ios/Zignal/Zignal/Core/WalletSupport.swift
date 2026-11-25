@@ -533,6 +533,70 @@ enum ChainClock {
     }
 }
 
+/// The chain's time worked out from block height alone, to check the block times the light
+/// server supplies (a server could date a block weeks ahead). No phone clock and no network:
+/// anchored to checkpoints the SDK ships, and to the block spacing each network upgrade sets
+/// (75 seconds; 25 from NU7, block 3,543,405, ZIP 218). Between two anchors, the difference
+/// between the spacing and the real time is spread evenly. Never re-anchored from what a
+/// server says. Measured Nov 25, 2026: 6 minutes off, 13 days after the newest anchor.
+enum HeightClock {
+    struct Anchor: Equatable, Sendable {
+        let height: Int
+        let time: UInt64
+    }
+
+    /// Mainnet checkpoints the SDK ships (`Resources/checkpoints/mainnet`), oldest first. The
+    /// newest one it ships must be the last: a test checks, so an SDK update with a newer
+    /// checkpoint asks for it here.
+    static let anchors = [Anchor(height: 3_390_000, time: 1_782_372_852),
+                          Anchor(height: 3_565_000, time: 1_794_477_230)]
+
+    /// Seconds per block from each height on. A network upgrade that changes the spacing comes
+    /// with an SDK update (without one the wallet stops following the chain); its row goes here.
+    static let spacing: [(from: Int, seconds: Int64)] = [(0, 75), (3_543_405, 25)]
+
+    /// How far a block's time may be from the height clock: a day.
+    static let tolerance: UInt64 = 86_400
+
+    /// The expected time of the block at `height`, in Unix seconds; nil below the oldest anchor.
+    static func time(at height: Int) -> UInt64? {
+        guard let first = anchors.first, let last = anchors.last, height >= first.height else { return nil }
+        let seconds: Int64
+        if height >= last.height {
+            seconds = Int64(last.time) + elapsed(from: last.height, to: height)
+        } else {
+            guard let upper = anchors.firstIndex(where: { $0.height > height }), upper > 0 else { return nil }
+            let low = anchors[upper - 1], high = anchors[upper]
+            let drift = (Int64(high.time) - Int64(low.time)) - elapsed(from: low.height, to: high.height)
+            seconds = Int64(low.time) + elapsed(from: low.height, to: height)
+                + drift * Int64(height - low.height) / Int64(high.height - low.height)
+        }
+        return seconds > 0 ? UInt64(seconds) : nil
+    }
+
+    /// Seconds from height `a` to height `b` by the spacing table (negative when `b` is lower).
+    static func elapsed(from a: Int, to b: Int) -> Int64 {
+        if b < a { return -elapsed(from: b, to: a) }
+        var total: Int64 = 0
+        for (index, step) in spacing.enumerated() {
+            let end = index + 1 < spacing.count ? spacing[index + 1].from : Int.max
+            let low = max(a, step.from), high = min(b, end)
+            if high > low { total += Int64(high - low) * step.seconds }
+        }
+        return total
+    }
+
+    /// The time to read a transaction at: the server's block time while it is within a day of
+    /// the height clock, otherwise the height clock's, with `mismatch` set. Without a height, or
+    /// below the oldest anchor, the server's time as it is.
+    static func reading(claimed: UInt64?, height: Int?) -> (time: UInt64, mismatch: Bool)? {
+        guard let height, let expected = time(at: height) else { return claimed.map { ($0, false) } }
+        guard let claimed else { return (expected, false) }
+        let apart = claimed > expected ? claimed - expected : expected - claimed
+        return apart > tolerance ? (expected, true) : (claimed, false)
+    }
+}
+
 /// Whether "Prepare for chatting" would help right now.
 ///
 /// Each message spends one note. Its change comes back as a new note of almost the same value,
