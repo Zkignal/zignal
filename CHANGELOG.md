@@ -21,7 +21,7 @@ the same commit.
   `HeightClock`), and sending uses the height-checked time too. A phone with a wrong date no
   longer pauses invites, and a phone wrong the same way as the server no longer hides a
   lying server. The chat list's two warnings become one; Debug builds can show it with the
-  launch argument `-ZignalDebugServerTimesOff YES`.
+  launch argument `-ZignalDebugServerTimesOff YES`. (`b650f2d`)
 - **A block the height clock can't date gives no time.** Below its oldest anchor (June 2026,
   older than Zignal) the clock had nothing to compare with and took the light server's block
   time as it came, counted as matching; so did a time without a height. A server could set
@@ -29,27 +29,33 @@ the same commit.
   There is now no time at all for such a block (`HeightClock.reading`): sending and making
   an invite wait as they do while the wallet catches up, and a transaction mined there is
   never read. Heights above 32 bits, which no chain has, are refused before any arithmetic
-  (`HeightClock.maxHeight`). From two outside reviews.
+  (`HeightClock.maxHeight`). From two outside reviews. (`b650f2d`)
 - **The light server's words are shown short, plain and as its own.** When the server
   refuses a transaction, its message was shown as it came. It is now one line of plain
   ASCII, at most 120 characters, in quotation marks after "The light server didn't accept
-  the message. Its answer:" (`ServerText`).
+  the message. Its answer:" (`ServerText`). (`b650f2d`)
 - **A contact's address is fully checked before every send.** The address a contact sends
   with their first message was checked by its characters only; an invite's has been fully
   checked since `72ba91f`. `ContactAddress` now checks it before a message's keys move and
-  again where the transaction is made. From an outside review.
+  again where the transaction is made. From an outside review. (`b650f2d`)
 - **New profiles don't stamp their first prekeys with the phone's date.** They are stamped 0
   and replaced at the first chain time that matches its height, before any invite is made
-  from them.
+  from them. (`b650f2d`)
 - **A lost first-launch setting no longer deletes the profiles.** The clean-up of what an
   earlier install left in the Keychain ran whenever one setting read as unset, and removed
   the vault and both profile files. It now runs only when there is no profile file
-  (`ProfileStore.hasProfileFiles`). 2 tests rewritten and 4 new (153 app tests).
+  (`ProfileStore.hasProfileFiles`). 2 tests rewritten and 4 new (153 app tests). (`b650f2d`)
 
 ### Documentation
+- **Notes for Zcash developers** (`docs/NOTES-FOR-ZCASH-DEVELOPERS.md`): what building
+  Zignal showed about the light-wallet stack. How crowded shielded blocks are, measured on
+  mainnet (for cover fetches); how a light server sets block times and where a new wallet
+  starts, and the height clock that checks it; what Tor covers in the Swift SDK and what it
+  doesn't, and a Tor library version to check; SDK 3.0.0 after NU7, and where upstream work
+  continues; binary data in memos. The README's repository table lists `docs/`.
 - **The Logging note counts the crowd meter's lines.** The README said Debug builds print
   two kinds of lines to Xcode's console; with the crowd meter there are three. From an
-  outside review.
+  outside review. (`b650f2d`)
 
 ## 2026-11-25
 
