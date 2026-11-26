@@ -30,20 +30,12 @@ struct ChatListView: View {
                 if session.walletDateNeeded {
                     WalletDateSection(session: session)
                 }
-                if session.clocksDisagree {
-                    Section {
-                        Label("This phone's date and the network's time don't match",
-                              systemImage: "exclamationmark.triangle")
-                    } footer: {
-                        Text("They are more than a day apart. Until that's fixed, messages you send may not arrive and new invites can't be made. Check Date & Time in the Settings app. If the phone's date is right, the server may be wrong: choose another one under Network.")
-                    }
-                }
-                if session.serverTimesMismatch {
+                if session.clocksDisagree || session.serverTimesMismatch {
                     Section {
                         Label("This server's block times don't match the chain",
                               systemImage: "exclamationmark.triangle")
                     } footer: {
-                        Text("A block's date was more than a day away from what its place in the chain says. Zignal read the messages by the chain's height instead, so nothing is lost. If this keeps showing after the next unlock, choose another server under Network.")
+                        Text("A block's date is more than a day away from what its place in the chain says. Messages are still sent and read by the chain's height, so nothing is lost, but new invites and clean-up wait until the times match. Choose another server under Network.")
                     }
                 }
                 if session.cameBackWithoutChats {

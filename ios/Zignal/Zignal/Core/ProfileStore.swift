@@ -90,6 +90,12 @@ struct ProfileStore {
         }
     }
 
+    /// True when the folder holds at least one profile file. False for a folder that isn't
+    /// there yet, as on the first launch of an install.
+    func hasProfileFiles() -> Bool {
+        (try? profileFiles())?.isEmpty == false
+    }
+
     /// Returns nil when this profile has no file on this device yet.
     func load(_ keys: ProfileKeyset) throws -> ProfileData? {
         let url = fileURL(for: keys)

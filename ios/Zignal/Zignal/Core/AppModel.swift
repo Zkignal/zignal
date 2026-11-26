@@ -42,9 +42,13 @@ final class AppModel {
             let defaults = UserDefaults.standard
             if !defaults.bool(forKey: Self.installedKey) {
                 // First launch of this install. iOS keeps Keychain items after an app is
-                // deleted, so clear anything a previous install left behind.
-                for item in Keychain.Item.allCases { try Keychain.delete(item) }
-                try store.removeAll()
+                // deleted, so clear anything a previous install left behind. A new install
+                // has no profile files: when there are some, this isn't a first launch and
+                // only this setting was lost, so nothing is deleted.
+                if !store.hasProfileFiles() {
+                    for item in Keychain.Item.allCases { try Keychain.delete(item) }
+                    try store.removeAll()
+                }
                 defaults.set(true, forKey: Self.installedKey)
             }
             try store.prepare()

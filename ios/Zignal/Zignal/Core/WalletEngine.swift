@@ -187,12 +187,18 @@ final class WalletEngine {
             if tx.minedHeight != nil { snapshot.mined.insert(tx.rawID) }
             if tx.state == .expired || tx.isExpiredUmined == true { snapshot.expired.insert(tx.rawID) }
             guard !tx.isSentTransaction, !processed.contains(tx.rawID) else { continue }
+            // Mined at a height the height clock can't date (below its oldest anchor, so
+            // older than Zignal itself, or no real height at all): it can't carry a message
+            // and its time can't be checked, so its memos are never read. Nothing is
+            // recorded about it; it is passed over again on every pass.
+            if let mined = tx.minedHeight, HeightClock.time(at: mined) == nil { continue }
             let outputs = await sync.getTransactionOutputs(for: tx).map(Self.reduce)
             guard let memos = IncomingMemos.extract(from: outputs) else { continue }
             // The block's time, checked against its height (`HeightClock`): a time more than a
             // day off is replaced by the height's, so a server can't move the time a message
             // is read at (the core also clears its replay records by it). Not in a block yet:
-            // the chain's time, checked the same way; still unknown, it comes back later.
+            // the chain's time, checked the same way. Without a time the clock can check, it
+            // comes back later.
             let claimed = tx.blockTime.map { UInt64(max(0, $0)) } ?? chainNow
             let height = tx.minedHeight ?? (tx.blockTime == nil ? scanned?.height : nil)
             guard claimed != nil || tx.minedHeight != nil,
@@ -204,12 +210,28 @@ final class WalletEngine {
     }
 
     /// The protocol clock, in Unix seconds: the header time of the newest block this wallet has
-    /// scanned, once that block is close to the chain tip the server reports (`ChainClock`).
-    /// Nil before that. Message tags, prekeys and retries use it instead of the phone's date.
+    /// scanned, once that block is close to the chain tip the server reports (`ChainClock`),
+    /// checked against its height (`HeightClock`): more than a day off, the height's time is
+    /// used. Nil before that. Message tags, prekeys and retries use it, never the phone's date.
     func chainTime() async -> UInt64? {
+        await chainReading()?.time
+    }
+
+    /// `chainTime`, and whether the server's block time matched its height (`ChainClock.Reading`).
+    func chainReading() async -> ChainClock.Reading? {
         guard let sync = synchronizer, let block = try? await sync.latestScannedBlock() else { return nil }
-        return ChainClock.time(scannedHeight: block.height, scannedTime: block.time,
-                               tipHeight: sync.latestState.latestBlockHeight)
+        let serverTime = ChainClock.time(scannedHeight: block.height, scannedTime: block.time,
+                                         tipHeight: sync.latestState.latestBlockHeight)
+        #if DEBUG
+        // Debug builds only, to preview the warning: with the launch argument
+        // `-ZignalDebugServerTimesOff YES` (Xcode > Product > Scheme > Edit Scheme > Run >
+        // Arguments), the server's time is taken as 30 days ahead. Not in Release builds.
+        let time = UserDefaults.standard.bool(forKey: "ZignalDebugServerTimesOff")
+            ? serverTime.map { $0 + 30 * 86_400 } : serverTime
+        #else
+        let time = serverTime
+        #endif
+        return ChainClock.reading(chain: time, height: block.height)
     }
 
     /// Our own transactions that are mined or still waiting to be mined (expired ones are left
@@ -242,7 +264,7 @@ final class WalletEngine {
     /// Sends the memos as one shielded transaction to `address`: one zero-value output per
     /// memo. Returns the transaction id.
     func send(memos: [Data], to address: String) async throws -> Data {
-        guard PaymentRequest.isShieldedAddress(address) else { throw ZignalError.invalidAddress }
+        guard ContactAddress.isValid(address) else { throw ZignalError.invalidAddress }
         guard (1...15).contains(memos.count), memos.allSatisfy({ $0.count == 512 }) else {
             throw ZignalError.messageTooLong
         }
@@ -271,7 +293,7 @@ final class WalletEngine {
             // The server has it already (from the first try or the SDK's own resend).
             return
         case .rejected(_, let message):
-            throw ZignalError.sendRejected(message)
+            throw ZignalError.serverRefused(message)
         case .unreachable, .notAttempted:
             throw ZignalError.sendRejected("The server couldn't be reached. It will be tried again.")
         }
@@ -330,7 +352,7 @@ final class WalletEngine {
             case .grpcFailure(_, let error):
                 throw error
             case .submitFailure(_, _, let description):
-                throw ZignalError.sendRejected(description)
+                throw ZignalError.serverRefused(description)
             case .notAttempted:
                 throw ZignalError.sendRejected("The transaction was not sent.")
             }
@@ -565,7 +587,8 @@ enum WalletShutdown {
     }
 }
 
-/// The full check of a contact's address, made when a chat starts from an invite.
+/// The full check of a contact's address, made when a chat starts from an invite and before
+/// every send (a contact who opens the chat sends their address with their first message).
 /// `PaymentRequest.isShieldedAddress` looks only at the characters; this also has the SDK decode
 /// the address: a mainnet Unified Address with the right checksum and an Orchard receiver, as
 /// every Zignal invite's address has. A damaged address is refused at once, instead of failing

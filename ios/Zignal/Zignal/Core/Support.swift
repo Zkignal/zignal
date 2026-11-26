@@ -17,6 +17,8 @@ enum ZignalError: LocalizedError {
     case notEnoughFunds
     case notEnoughToPrepare(minimum: Int64)
     case sendRejected(String)
+    /// The light server's own words for refusing a transaction (shown through `ServerText`).
+    case serverRefused(String)
     case invalidInvite
     case ownInvite
     case inviteAlreadyUsed
@@ -33,18 +35,54 @@ enum ZignalError: LocalizedError {
         case .invalidRecoveryPhrase: "That isn't a valid 24-word recovery phrase. Check each word."
         case .walletNotReady: "The wallet is still starting. Try again in a moment."
         case .walletCatchingUp: "The wallet is still catching up with the network. Try again once it says Up to date."
-        case .clocksDisagree: "This phone's date and the network's time don't match, so an invite can't be made right now. Check Date & Time in the Settings app, or choose another server under Network, then try again."
+        case .clocksDisagree: "This server's block times don't match the chain, so an invite can't be made right now. Choose another server under Network, then try again."
         case .walletMismatch: "The wallet on this phone doesn't belong to this profile."
         case .notEnoughFunds: "Not enough ZEC in this wallet yet. Add funds and wait for them to confirm."
         case .notEnoughToPrepare(let minimum):
             "Prepare needs at least \(String(format: "%.4f", Double(minimum) / 100_000_000)) ZEC that has confirmed. You can still send single messages without it."
         case .sendRejected(let reason): "The network didn't accept the message: \(reason)"
+        case .serverRefused(let words): ServerText.refusal(words)
         case .invalidInvite: "That isn't a valid Zignal invite. Check that you copied all of it."
         case .ownInvite: "That's your own invite. Share it with your contact instead."
         case .inviteAlreadyUsed: "You've already used this invite. An invite works only once: ask your contact for a new one if you need to start over."
         case .existingContact: "You already have a chat with this contact."
-        case .invalidAddress: "This contact's address isn't a shielded Zcash address, so nothing was sent."
+        case .invalidAddress: "This contact's address isn't a valid shielded Zcash address with an Orchard receiver, so nothing was sent."
         }
+    }
+}
+
+/// Words that came from the light server, made safe to show. The server chooses them, so they
+/// are never shown as they came: one line of plain ASCII letters, digits and punctuation (no
+/// quotation marks), at most `limit` characters, inside quotation marks and named as the
+/// server's answer.
+enum ServerText {
+    static let limit = 120
+
+    /// `text` as one plain line: anything that isn't a printable ASCII character (line breaks,
+    /// other alphabets, invisible characters) or is a quotation mark ends a word; at most `limit`
+    /// characters.
+    static func plain(_ text: String) -> String {
+        var words: [String] = []
+        var word = ""
+        for scalar in text.unicodeScalars {
+            if scalar.value > 0x20, scalar.value < 0x7F, scalar.value != 0x22 {
+                word.unicodeScalars.append(scalar)
+            } else if !word.isEmpty {
+                words.append(word)
+                word = ""
+            }
+        }
+        if !word.isEmpty { words.append(word) }
+        let line = words.joined(separator: " ")
+        return line.count > limit ? String(line.prefix(limit)) + "..." : line
+    }
+
+    /// What the app shows when the light server refuses a transaction.
+    static func refusal(_ text: String) -> String {
+        let said = plain(text)
+        return said.isEmpty
+            ? "The light server didn't accept the message."
+            : "The light server didn't accept the message. Its answer: \"\(said)\""
     }
 }
 

@@ -459,8 +459,8 @@ enum IncomingReading {
     /// Whether a transaction is finished with, so it isn't read again. One with zkw memos that
     /// couldn't be read is tried again for `retryWindow` after it was sent (`sentAt`, its block
     /// time): the message that opens its chat may still be on its way. `now` is the chain's time
-    /// (`ChainClock`), never the phone's; 0 while it isn't known, or while the phone's clock
-    /// doesn't agree with it (`ChainClock.agreed`), which keeps trying.
+    /// (`ChainClock`), never the phone's; 0 while it isn't known, or while it doesn't match its
+    /// block's height (`ChainClock.agreed`), which keeps trying.
     static func isDone(read: Bool, complete: Bool, memos: [Data], sentAt: UInt64, now: UInt64) -> Bool {
         if read { return true }
         // Until the wallet has scanned every block, anything may still be missing.
@@ -488,9 +488,11 @@ enum FirstReply {
 /// invites) were stamped with the phone's date too, so a wrong date made invites expire early,
 /// or live too long. Now both sides use block times from the same chain.
 ///
-/// Block times reach the wallet through its light server, which can be wrong or lie. So steps
-/// that can't be undone also need the phone's clock to agree with the chain's time (`agreed`),
-/// and the chat list says when the two don't match (`disagree`).
+/// Block times reach the wallet through its light server, which can be wrong or lie. So the
+/// chain's time is checked against the height clock (`HeightClock`, `reading`): a time more
+/// than a day off is replaced by the height's; steps that can't be undone wait while they
+/// don't match (`agreed`), and the chat list says so (`disagree`). The phone's date plays no
+/// part: a phone with a wrong date works normally.
 enum ChainClock {
     /// How far (in blocks) the newest scanned block may be behind the chain tip the server
     /// reports and still count as "now": 2 hours at 25 seconds a block, 6 at 75. The contact
@@ -506,30 +508,38 @@ enum ChainClock {
         return UInt64(scannedTime)
     }
 
-    /// How far apart the chain's time and the phone's clock may be and still agree: a day. The
-    /// chain's time runs up to a few hours behind (`maxLag`), and a phone's clock is rarely more
-    /// than minutes off.
-    static let tolerance: UInt64 = 86_400
+    /// How far the chain's time may be from what its block's height says: a day (`HeightClock`).
+    static let tolerance = HeightClock.tolerance
 
-    /// True when the chain's time is known and the phone's clock is more than `tolerance` away
-    /// from it. One of the two is wrong then, and Zignal can't tell which: the light server
-    /// supplies the block times, and the user sets the phone's date.
-    static func disagree(chain: UInt64?, phone: Date) -> Bool {
-        guard let chain else { return false }
-        let seconds = phone.timeIntervalSince1970
-        guard seconds.isFinite, seconds >= 0, seconds < 4_000_000_000_000 else { return true }
-        let phoneTime = UInt64(seconds)
-        return (chain > phoneTime ? chain - phoneTime : phoneTime - chain) > tolerance
+    /// The chain's time after the height check: the server's block time while it matches the
+    /// block's height (`agrees`), otherwise the height's.
+    struct Reading: Equatable, Sendable {
+        let time: UInt64
+        let agrees: Bool
+    }
+
+    /// Checks `chain`, the time of the block at `height`, against the height clock. Nil while the
+    /// chain's time isn't known, and for a block the height clock can't date
+    /// (`HeightClock.reading`).
+    static func reading(chain: UInt64?, height: Int) -> Reading? {
+        guard let chain, let checked = HeightClock.reading(claimed: chain, height: height) else { return nil }
+        return Reading(time: checked.time, agrees: !checked.mismatch)
+    }
+
+    /// True when the server's block time is more than a day away from what its height says.
+    /// The chat list says so.
+    static func disagree(_ reading: Reading?) -> Bool {
+        reading?.agrees == false
     }
 
     /// The time for steps that can't be undone (dropping old prekeys, which ends every invite
     /// made from them, and giving up on a transaction that couldn't be read) and for making an
-    /// invite: the chain's time, but only while the phone's clock agrees with it. Nil otherwise,
-    /// so one wrong clock alone, a lying server's or a phone's, never destroys anything.
-    /// Messages still go out and are read on the chain's time either way.
-    static func agreed(chain: UInt64?, phone: Date) -> UInt64? {
-        guard let chain, !disagree(chain: chain, phone: phone) else { return nil }
-        return chain
+    /// invite: the chain's time, but only while it matches its block's height. Nil otherwise, so
+    /// a lying server alone never destroys anything. Messages still go out and are read on the
+    /// height-checked time either way.
+    static func agreed(_ reading: Reading?) -> UInt64? {
+        guard let reading, reading.agrees else { return nil }
+        return reading.time
     }
 }
 
@@ -558,9 +568,16 @@ enum HeightClock {
     /// How far a block's time may be from the height clock: a day.
     static let tolerance: UInt64 = 86_400
 
-    /// The expected time of the block at `height`, in Unix seconds; nil below the oldest anchor.
+    /// The highest block height the clock dates. Block heights are 32-bit numbers in Zcash; a
+    /// larger one can only come from a broken or lying server, and would overflow the
+    /// arithmetic below.
+    static let maxHeight = Int(UInt32.max)
+
+    /// The expected time of the block at `height`, in Unix seconds; nil below the oldest anchor
+    /// and above `maxHeight`.
     static func time(at height: Int) -> UInt64? {
-        guard let first = anchors.first, let last = anchors.last, height >= first.height else { return nil }
+        guard let first = anchors.first, let last = anchors.last,
+              height >= first.height, height <= maxHeight else { return nil }
         let seconds: Int64
         if height >= last.height {
             seconds = Int64(last.time) + elapsed(from: last.height, to: height)
@@ -587,10 +604,12 @@ enum HeightClock {
     }
 
     /// The time to read a transaction at: the server's block time while it is within a day of
-    /// the height clock, otherwise the height clock's, with `mismatch` set. Without a height, or
-    /// below the oldest anchor, the server's time as it is.
+    /// the height clock, otherwise the height clock's, with `mismatch` set. Nil without a
+    /// height, and for a height the clock can't date (below the oldest anchor, which is older
+    /// than Zignal itself, or above `maxHeight`): the time isn't known then, and the server's
+    /// word alone is never taken for it.
     static func reading(claimed: UInt64?, height: Int?) -> (time: UInt64, mismatch: Bool)? {
-        guard let height, let expected = time(at: height) else { return claimed.map { ($0, false) } }
+        guard let height, let expected = time(at: height) else { return nil }
         guard let claimed else { return (expected, false) }
         let apart = claimed > expected ? claimed - expected : expected - claimed
         return apart > tolerance ? (expected, true) : (claimed, false)

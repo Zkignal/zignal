@@ -256,6 +256,22 @@ struct AttemptLimiterTests {
 }
 
 struct ProfileStoreTests {
+    /// The first-launch clean-up removes what an earlier install left in the Keychain only when
+    /// there is no profile file (`AppModel.start`): with one, the vault and the profiles stay.
+    @Test func knowsWhetherAProfileFileExists() throws {
+        let store = try makeTempStore()
+        #expect(!store.hasProfileFiles())
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        try store.reset(with: [(ProfileSession.emptyData(keys: keys), keys)])
+        #expect(store.hasProfileFiles())
+        try store.removeAll()
+        #expect(!store.hasProfileFiles())
+        // A folder that isn't there yet, as on a first launch.
+        let missing = ProfileStore(directory: store.directory.appending(path: "none", directoryHint: .isDirectory),
+                                   deviceKeySource: .fixed(SymmetricKey(size: .bits256)))
+        #expect(!missing.hasProfileFiles())
+    }
+
     /// Each write makes a new file, so a fixed order would let file IDs show which profile
     /// was saved. The saved profile's file is not always written first.
     @Test func filesAreWrittenInARandomOrder() {
@@ -1280,31 +1296,49 @@ struct ChainClockTests {
         #expect(try !skewed.rotatePrekeysIfDue(now: chain))
     }
 
-    @Test func theTwoClocksMustAgreeBeforeAnythingIsDropped() {
-        let chain: UInt64 = 1_790_000_000
-        let phone = Date(timeIntervalSince1970: TimeInterval(chain))
-        // The same moment, and up to a day either way: the chain's time is used.
-        #expect(ChainClock.agreed(chain: chain, phone: phone) == chain)
-        #expect(ChainClock.agreed(chain: chain + ChainClock.tolerance, phone: phone) == chain + ChainClock.tolerance)
-        #expect(ChainClock.agreed(chain: chain - ChainClock.tolerance, phone: phone) == chain - ChainClock.tolerance)
-        #expect(!ChainClock.disagree(chain: chain + ChainClock.tolerance, phone: phone))
-        // Block times 22 days ahead of the phone, or 3: no agreed time, and the app warns.
-        #expect(ChainClock.agreed(chain: chain + 22 * 86_400, phone: phone) == nil)
-        #expect(ChainClock.disagree(chain: chain + 22 * 86_400, phone: phone))
-        #expect(ChainClock.agreed(chain: chain + 3 * 86_400, phone: phone) == nil)
-        // A phone's date a day and a second ahead of the chain.
-        #expect(ChainClock.agreed(chain: chain - ChainClock.tolerance - 1, phone: phone) == nil)
-        #expect(ChainClock.disagree(chain: chain - ChainClock.tolerance - 1, phone: phone))
-        // A date before 1970 never agrees.
-        #expect(ChainClock.agreed(chain: chain, phone: Date(timeIntervalSince1970: -1)) == nil)
+    @Test func blockTimesMustMatchTheirHeightBeforeAnythingIsDropped() throws {
+        let height = 3_600_000
+        let expected = try #require(HeightClock.time(at: height))
+        // Up to a day either way from what the height says: the server's time is used.
+        let near = try #require(ChainClock.reading(chain: expected + 3_600, height: height))
+        #expect(near == ChainClock.Reading(time: expected + 3_600, agrees: true))
+        #expect(ChainClock.agreed(near) == expected + 3_600)
+        #expect(!ChainClock.disagree(near))
+        #expect(ChainClock.agreed(ChainClock.reading(chain: expected + ChainClock.tolerance, height: height))
+                == expected + ChainClock.tolerance)
+        #expect(ChainClock.agreed(ChainClock.reading(chain: expected - ChainClock.tolerance, height: height))
+                == expected - ChainClock.tolerance)
+        // 22 days ahead, or a day and a second behind: messages use the height's time, nothing
+        // that can't be undone runs, and the app warns. No phone date is involved.
+        for wrong in [expected + 22 * 86_400, expected - ChainClock.tolerance - 1] {
+            let reading = try #require(ChainClock.reading(chain: wrong, height: height))
+            #expect(reading == ChainClock.Reading(time: expected, agrees: false))
+            #expect(ChainClock.agreed(reading) == nil)
+            #expect(ChainClock.disagree(reading))
+        }
         // While the chain's time isn't known there is nothing to compare: no time, no warning.
-        #expect(ChainClock.agreed(chain: nil, phone: phone) == nil)
-        #expect(!ChainClock.disagree(chain: nil, phone: phone))
+        #expect(ChainClock.reading(chain: nil, height: height) == nil)
+        #expect(ChainClock.agreed(nil) == nil)
+        #expect(!ChainClock.disagree(nil))
+    }
+
+    /// A new profile's first prekeys aren't stamped with the phone's date: the first chain time
+    /// replaces them, before any invite is made from them.
+    @Test func aNewProfilesFirstPrekeysAreReplacedAtTheFirstChainTime() throws {
+        let keys = try ProfileKeyset(secret: secureRandom(32))
+        let inbox = try ProfileSession.restoredInbox(try ProfileSession.emptyData(keys: keys).inbox, keys: keys)
+        let chain: UInt64 = 1_795_627_200
+        #expect(try inbox.rotatePrekeysIfDue(now: chain))
+        #expect(try !inbox.rotatePrekeysIfDue(now: chain))
+        // An invite made after that is answered at the chain's time.
+        let invite = try inbox.createInvite(myAddress: Data("utest1new".utf8))
+        let other = try ZkwInbox(seed: secureRandom(32), now: chain)
+        let first = try other.startFromInvite(invite: invite, myAddress: Data("utest1other".utf8), firstText: "hi")
+        #expect(try first.memos.compactMap { try inbox.receive(memo: $0, now: chain) }.count == 1)
     }
 
     @Test func aChainClockWeeksAheadDoesNotEndInvitesAlreadyHandedOut() throws {
         let chain: UInt64 = 1_790_000_000
-        let phone = Date(timeIntervalSince1970: TimeInterval(chain))
         // Block times from a light server that is wrong, or lying: 22 days ahead.
         let ahead = chain + 22 * 86_400
 
@@ -1317,12 +1351,15 @@ struct ChainClockTests {
         let lost = try alice.startFromInvite(invite: lostInvite, myAddress: Data("utest1alice".utf8), firstText: "hi")
         #expect(try lost.memos.compactMap { try bob.receive(memo: $0, now: chain) }.isEmpty)
 
-        // What the app does: the two clocks don't agree, so nothing is rotated or dropped, and
-        // the invite still opens its chat.
+        // What the app does: a block time 22 days away from what its height says doesn't
+        // match, so nothing is rotated or dropped, and the invite still opens its chat.
         let carol = try ZkwInbox(seed: secureRandom(32), now: chain)
         let keptInvite = try carol.createInvite(myAddress: Data("utest1carol".utf8))
-        #expect(ChainClock.agreed(chain: ahead, phone: phone) == nil)
-        if let agreed = ChainClock.agreed(chain: ahead, phone: phone) {
+        let height = 3_600_000
+        let real = try #require(HeightClock.time(at: height))
+        let lying = ChainClock.reading(chain: real + (ahead - chain), height: height)
+        #expect(ChainClock.agreed(lying) == nil)
+        if let agreed = ChainClock.agreed(lying) {
             _ = try carol.rotatePrekeysIfDue(now: agreed)
         }
         let dave = try ZkwInbox(seed: secureRandom(32), now: chain)
@@ -1386,12 +1423,50 @@ struct HeightClockTests {
         #expect(behind.time == expected && behind.mismatch)
         let noClaim = try #require(HeightClock.reading(claimed: nil, height: height))
         #expect(noClaim.time == expected && !noClaim.mismatch)
-        // Without a height, or below the oldest anchor: the server's time as it is.
-        let unknown = try #require(HeightClock.reading(claimed: 42, height: nil))
-        #expect(unknown.time == 42 && !unknown.mismatch)
-        let old = try #require(HeightClock.reading(claimed: 42, height: 1_000_000))
-        #expect(old.time == 42 && !old.mismatch)
         #expect(HeightClock.reading(claimed: nil, height: nil) == nil)
+    }
+
+    /// A block the clock can't date gives no time at all: the server's word alone is never taken.
+    @Test func aBlockTheClockCantDateHasNoTime() throws {
+        // No height, or one below the oldest anchor (older than Zignal): whatever the server says.
+        #expect(HeightClock.reading(claimed: 42, height: nil) == nil)
+        #expect(HeightClock.reading(claimed: 1_795_627_200 + 31 * 86_400, height: 3_389_999) == nil)
+        #expect(HeightClock.reading(claimed: nil, height: 1_000_000) == nil)
+        // The first height it dates is the oldest anchor's.
+        #expect(HeightClock.reading(claimed: nil, height: 3_390_000)?.time == 1_782_372_852)
+        // Heights no chain has don't overflow the arithmetic; they have no time either.
+        let top = try #require(HeightClock.time(at: HeightClock.maxHeight))
+        #expect(top > 1_794_477_230)
+        for height in [HeightClock.maxHeight + 1, Int.max, -1, Int.min] {
+            #expect(HeightClock.time(at: height) == nil)
+            #expect(HeightClock.reading(claimed: 1_795_627_200, height: height) == nil)
+        }
+        // So the chain's clock has no reading there: nothing is sent, read or dropped on it.
+        let below = ChainClock.reading(chain: 1_795_627_200, height: 3_389_999)
+        #expect(below == nil)
+        #expect(ChainClock.agreed(below) == nil)
+        #expect(!ChainClock.disagree(below))
+    }
+}
+
+/// What the light server says when it refuses a transaction is the server's to choose, so it is
+/// never shown as it came (`ServerText`).
+struct ServerTextTests {
+    @Test func theServersWordsAreShownShortPlainAndAsItsOwn() {
+        #expect(ServerText.plain("16: bad-txns-in-belowout") == "16: bad-txns-in-belowout")
+        // One line; quotation marks, other alphabets and invisible characters are left out.
+        #expect(ServerText.plain("  fee\ttoo \n\n low \u{202E}\u{200B}") == "fee too low")
+        #expect(ServerText.plain("say \"hi\" \u{0430}\u{0431}c") == "say hi c")
+        // At most 120 characters.
+        let long = ServerText.plain(String(repeating: "word ", count: 100))
+        #expect(long.count == ServerText.limit + 3 && long.hasSuffix("..."))
+        // Named as the server's answer, inside quotation marks.
+        #expect(ZignalError.serverRefused("Update your wallet at\nexample.com").errorDescription
+                == "The light server didn't accept the message. Its answer: \"Update your wallet at example.com\"")
+        #expect(ZignalError.serverRefused(" \n ").errorDescription == "The light server didn't accept the message.")
+        // Zignal's own reasons are shown as before.
+        #expect(ZignalError.sendRejected("The transaction was not sent.").errorDescription
+                == "The network didn't accept the message: The transaction was not sent.")
     }
 }
 

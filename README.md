@@ -35,7 +35,8 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 25 | **Fixes from an outside review.** Block times from the light server are checked against a clock worked out from block height alone (no phone clock); a time more than a day off is replaced by the height's and the chat list says so; an invite's address is fully checked (checksum, mainnet, Orchard receiver) before a chat starts; a restored profile can open Network settings before "Find my funds"; a failed save while starting the demo chat puts its keys back too. PRIVACY.md and the README name the wallet's live feed of new transactions, which connects directly even with Tor on. | A light server that dates a block weeks ahead could move the time messages are read at, and empty the app's replay records; a damaged address failed only at the first send; the first sync of a restored profile couldn't use a chosen server or Tor setting; the feed wasn't listed among the direct connections. |  |
+| Nov 26 | **The phone's date no longer decides anything, and fixes from two reviews.** Making an invite, dropping old prekeys and giving up on a transaction that couldn't be read wait only while the server's block times don't match their height (the height clock), never on the phone's clock; sending uses the height-checked time. The chat list's two warnings become one: "This server's block times don't match the chain". A block the height clock can't date (below its oldest anchor, or with a height no chain has) gives no time: nothing is sent, read or dropped on it. What the light server says when it refuses a transaction is shown short, plain and as the server's answer. A contact's address is fully checked before every send. A new profile's first prekeys aren't stamped with the phone's date. The first-launch clean-up doesn't run when profile files exist. | A phone with a wrong date paused invites and clean-up, and a phone wrong the same way as a lying server let it through. A server could set the clock unchecked on a wallet below the oldest anchor, where it can also start a new wallet; its words were shown as they came; an address sent with a first message was checked by its characters only; a lost setting could have deleted both profiles. |  |
+| Nov 25 | **Fixes from an outside review.** Block times from the light server are checked against a clock worked out from block height alone (no phone clock); a time more than a day off is replaced by the height's and the chat list says so; an invite's address is fully checked (checksum, mainnet, Orchard receiver) before a chat starts; a restored profile can open Network settings before "Find my funds"; a failed save while starting the demo chat puts its keys back too. PRIVACY.md and the README name the wallet's live feed of new transactions, which connects directly even with Tor on. | A light server that dates a block weeks ahead could move the time messages are read at, and empty the app's replay records; a damaged address failed only at the first send; the first sync of a restored profile couldn't use a chosen server or Tor setting; the feed wasn't listed among the direct connections. | `72ba91f` |
 | Nov 25 | **"Remind me in": a reminder after a length of time you pick.** Next to the daily reminder, a countdown set with two wheels (hours and minutes) fires once, or again and again until it's turned off. Same words, "Zignal: Open to check", silent. | A time of day doesn't fit "check again in 10 minutes" or "every 2 hours". It's still a plain nudge made by the iPhone: no server, nothing checked in the background. | `d7e1793` |
 | Nov 25 | **New-message marks and an optional daily reminder.** A message that arrives while its chat isn't on screen is marked new on the chat list until the chat is opened. A daily reminder can be turned on from the chat list: the iPhone makes it at the time you pick, it always says "Zignal: Open to check", and it never says whether anything arrived. | Nothing showed that a message had come in. Zignal can't look while it's locked, by design, and has no server to watch for you, so the reminder is a plain nudge: no push service, nothing checked in the background. | `6c01d4d` |
 | Nov 23 | **The camera turns off as soon as an invite is read.** On the Add contact screen, an invite that is scanned or pasted ends the camera there and then, before the first message is typed; a wrong or used invite leaves it on to scan again. | The camera stayed on, with its green dot, until the Add contact screen closed (a November test), though nothing needed it after the invite was read. | `147335f` |
@@ -88,7 +89,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-149 app tests and 2 UI tests pass.
+153 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -286,11 +287,13 @@ that's on the roadmap.
   five times more than needed. Fees are public and reveal roughly how many memos a
   transaction carried.
 - **Clock:** messages, invites and prekeys use the time of the newest block the wallet has
-  scanned, not the phone's date, so a phone with the wrong date still sends messages its
-  contacts can read. Until the wallet has nearly caught up with the network, sending a message
-  or making an invite waits for it. Making an invite, dropping old prekeys and giving up on a
-  transaction that couldn't be read also wait until the phone's clock is within a day of that
-  time (see Security notes).
+  scanned, never the phone's date, so a phone with a wrong date works normally. That time
+  comes from the light server, so it is checked against a clock worked out from block height
+  alone (the SDK's checkpoints and the block spacing of each network upgrade): more than a
+  day off, the height's time is used. Until the wallet has nearly caught up with the
+  network, sending a message or making an invite waits for it. Making an invite, dropping
+  old prekeys and giving up on a transaction that couldn't be read also wait while the
+  server's block times don't match their height (see Security notes).
 - **Receiving:** after each sync, new transactions are read in chain order, each at its own
   block time, so a message read days later still finds its chat.
 - **Delivered** means the transaction is in a block. There are no read receipts, which would
@@ -425,9 +428,9 @@ that's on the roadmap.
 
 **Logging and network**
 - The app has no logging and no analytics, and the Zcash SDK's logging is turned off. Debug
-  builds run from Xcode print two kinds of lines to Xcode's console, to check that Zignal's
-  copy is cleared and to time unlocks: counts and durations, never text, keys or what was
-  copied.
+  builds run from Xcode print three kinds of lines to Xcode's console, to check that
+  Zignal's copy is cleared, to time unlocks and to measure how crowded the synced blocks
+  are: counts, sizes and durations, never text, keys, addresses or what was copied.
   TestFlight and App Store builds don't contain them.
 - Its only network traffic is the wallet talking to the server you choose.
 
@@ -560,7 +563,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 149 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 153 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -592,9 +595,13 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     a restore from a block height, a date or both (the earlier one wins, heights checked,
     October 1, 2026 when neither is given), a phrase restored as the decoy profile, both
     profiles restored from their own phrases, and a chat put back after a save that failed;
-  - the two clocks that must agree before prekeys are dropped (a chain time 22 days ahead
-    leaves an invite working), a chat waiting for its first reply, and Zignal's copy
-    cleared within its 60 seconds even when the pasteboard's count has moved on;
+  - block times that must match their height before prekeys are dropped (a server's time 22
+    days ahead leaves an invite working), the height clock (its anchors are the SDK's
+    checkpoints, its spacing, a block time far from its height replaced, a block it can't
+    date left without a time), a new profile's first prekeys replaced at the first chain
+    time, the light server's words shown short and plain, the check for profile files before
+    the first-launch clean-up, a chat waiting for its first reply, and Zignal's copy cleared
+    within its 60 seconds even when the pasteboard's count has moved on;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -640,16 +647,21 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   written still carries the conversation tag of the day it was written, so the contact's
   phone doesn't read it, while this phone shows it delivered. Until the fix (see Roadmap),
   write such a message again instead.
-- **The chain's time comes from the light server:** Zignal's clock is the time in the newest
-  block the wallet has scanned, and Zignal doesn't check block times against another source.
-  A server reporting wrong times can make the messages you send unreadable for the contact
-  (they carry the wrong day's tag) while this phone shows them delivered, and can keep this
-  phone from reading messages that arrive in blocks whose times it misreports. When the
-  chain's time and the phone's clock are more than a day apart, the chat list says so. Until
-  they agree again, no invite can be made and nothing that can't be undone happens: old
-  prekeys aren't dropped (so prekeys aren't rotated either) and no unread transaction is
-  given up on. Sending isn't blocked. If the phone's date is wrong the same way as the
-  server's time, nothing notices. Use servers you trust, or your own.
+- **The chain's time comes from the light server, checked by height:** Zignal's clock is the
+  time in the newest block the wallet has scanned. Every block time is checked against a
+  clock worked out from block height alone (the SDK's checkpoints and the block spacing of
+  each network upgrade; measured within minutes of the real time). A time more than a day
+  away from its height's is replaced by the height's, so messages are still sent and read on
+  the right day, and the chat list says the server's times don't match the chain. A block
+  the height clock can't date (below its oldest anchor of June 2026, which is older than
+  Zignal, or with a height no chain has) gives no time at all: nothing is sent, read or
+  dropped on it. Until the times match again, no invite can be made and nothing that can't
+  be undone happens: old prekeys aren't dropped (so prekeys aren't rotated either) and no
+  unread transaction is given up on. The phone's date plays no part. What's left: a server
+  off by less than a day goes unnoticed (messages are matched to the day before and after);
+  the height clock assumes the block spacing the app knows, so a network upgrade that
+  changes it needs an app update; and a server that serves a whole fake chain isn't caught.
+  Use servers you trust, or your own.
 - **A contact who restored their profile:** a recovery phrase brings back the wallet and the
   identity, not chats. What you send them on the old chat still shows delivered, and their
   phone can't read it; nothing tells your phone that they restored. Their app says, until it
@@ -837,8 +849,8 @@ To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
   delay before fetches over Tor (or blocks over Tor too), so a fetch can't be timed to a
   sync. Removing Zignal's copy from the pasteboard at lock and at the next unlock is done.
 - **From the November 20 review:** a core that keeps the prekeys unused invites still need,
-  whatever time it is given. In the app, clean-up that waits until the chain's time and the
-  phone's clock agree is done.
+  whatever time it is given. In the app, clean-up that waits until the chain's time can be
+  trusted is done (checked against block height since November 25, not the phone's clock).
 - **Hide which transactions the wallet reads** (November 23). Two ways are being measured:
   cover fetches, where the wallet also fetches other shielded transactions from the same
   blocks, in random order and after a random delay, so the server can't tell which one it
@@ -916,9 +928,10 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-22 | `b6b3f73` | `dev` and `main`: PRIVACY.md, the privacy policy (tag `private-testing-2`) |
 | 2026-11-23 | `147335f` | `dev` and `main`: the camera turns off as soon as an invite is read |
 | 2026-11-23 | `51c8a45` | `dev` and `main`: PRIVACY.md and the README say what the light server learns (tag `private-testing-3`) |
-| 2026-11-25 | `faac4b8` | `dev`: Debug builds measure how crowded the synced blocks are |
-| 2026-11-25 | `6c01d4d` | `dev`: new messages are marked on the chat list; an optional daily reminder |
-| 2026-11-25 | `d7e1793` | `dev`: a reminder after a length of time, once or repeating |
+| 2026-11-25 | `faac4b8` | `dev` and `main`: Debug builds measure how crowded the synced blocks are |
+| 2026-11-25 | `6c01d4d` | `dev` and `main`: new messages are marked on the chat list; an optional daily reminder |
+| 2026-11-25 | `d7e1793` | `dev` and `main`: a reminder after a length of time, once or repeating |
+| 2026-11-25 | `72ba91f` | `dev` and `main`: block times checked against block height; fixes from an outside review (tag `private-testing-4`) |
 
 ## Credits
 

@@ -19,9 +19,9 @@ final class ProfileSession {
     /// True while this profile waits for a wallet date after its file wasn't on the phone (see
     /// `ProfileData.walletDateNeeded` and `setWalletStart`). Its wallet doesn't start until then.
     private(set) var walletDateNeeded: Bool
-    /// True while the chain's time and this phone's clock are more than a day apart (see
-    /// `ChainClock.disagree`). The chat list says so; until they agree again, no invite is made
-    /// and clean-up that can't be undone waits.
+    /// True while the server's newest block time is more than a day away from what its height
+    /// says (`ChainClock.disagree`). The chat list says so; until they match again, no invite is
+    /// made and clean-up that can't be undone waits.
     private(set) var clocksDisagree = false
     /// True once, while unlocked, the light server gave a block time more than a day away from
     /// what the block's height says (`HeightClock`). Messages are read at the height's time
@@ -133,7 +133,10 @@ final class ProfileSession {
     nonisolated static func emptyData(keys: ProfileKeyset, walletCreated: Date? = Date(),
                                       restored: Bool = false,
                                       startHeight: Int? = nil) throws -> ProfileData {
-        let inbox = try ZkwInbox(seed: keys.identitySeed, now: unixNow())
+        // Its first prekeys are stamped 0, never with the phone's date: they are replaced as
+        // soon as the chain's time is known and matches its block's height
+        // (`refreshFromWallet`, `makeInvite`), before any invite is made from them.
+        let inbox = try ZkwInbox(seed: keys.identitySeed, now: 0)
         // A new profile saves its wallet settings, Tor on (`WalletSettings.standard`): a file
         // without them is from before Tor was on by default and keeps Tor off.
         return ProfileData(inbox: try inbox.exportSealed(stateKey: keys.stateKey),
@@ -272,6 +275,14 @@ final class ProfileSession {
             return
         }
         guard !isClosed else { return }
+        // The address this contact gave with their first message is checked in full before
+        // any keys move, as an invite's is (`ContactAddress`): a damaged one, or one without
+        // an Orchard receiver, would fail at every send.
+        guard let theirs = try? inbox.contactAddress(peer: peer),
+              ContactAddress.isValid(String(decoding: theirs, as: UTF8.self)) else {
+            errorText = ZignalError.invalidAddress.errorDescription
+            return
+        }
         do {
             let before = try inboxBefore()
             let out = try inbox.sendText(peer: peer, text: trimmed, now: now)
@@ -347,9 +358,10 @@ final class ProfileSession {
         do {
             guard let wallet else { throw ZignalError.walletNotReady }
             let text = String(decoding: address, as: UTF8.self)
-            // The address came from a contact's invite and goes into a payment request, so it
-            // must be a plain shielded address and nothing else (no extra request parameters).
-            guard PaymentRequest.isShieldedAddress(text) else { throw ZignalError.invalidAddress }
+            // The address came from a contact (their invite, or their first message) and goes
+            // into a payment request, so it must be a plain shielded address and nothing else
+            // (no extra request parameters), with the right checksum and an Orchard receiver.
+            guard ContactAddress.isValid(text) else { throw ZignalError.invalidAddress }
             let txid = try await wallet.send(memos: memos, to: text)
             updateMessage(id) {
                 $0.status = .sent
@@ -450,16 +462,15 @@ final class ProfileSession {
                 if snapshot.timesMismatch, !serverTimesMismatch { serverTimesMismatch = true }
                 var changed = false
                 let incoming = snapshot.incoming
-                // The chain's time; nil while it isn't known.
-                let chainNow = await wallet.chainTime()
+                // The chain's time, checked against its block's height; nil while it isn't known.
+                let reading = await wallet.chainReading()
                 guard !isClosed else { return }
-                // Steps that can't be undone wait until the chain's time is known and this
-                // phone's clock agrees with it (see `ChainClock.agreed`). Until then `now` is 0,
-                // which keeps unread transactions waiting.
-                let phoneNow = Date()
-                let disagree = ChainClock.disagree(chain: chainNow, phone: phoneNow)
+                // Steps that can't be undone wait until the chain's time is known and matches its
+                // block's height (see `ChainClock.agreed`). Until then `now` is 0, which keeps
+                // unread transactions waiting. The phone's date plays no part.
+                let disagree = ChainClock.disagree(reading)
                 if clocksDisagree != disagree { clocksDisagree = disagree }
-                let agreedNow = ChainClock.agreed(chain: chainNow, phone: phoneNow)
+                let agreedNow = ChainClock.agreed(reading)
                 let now = agreedNow ?? 0
                 // Weekly prekey rotation runs on the chain's time, so a wrong date on the phone
                 // can't stamp prekeys in the past or the future. It also drops prekeys past their
@@ -551,12 +562,12 @@ final class ProfileSession {
         guard !isClosed, let wallet, wallet.canTransact else { throw ZignalError.walletNotReady }
         // The invite carries this profile's current prekeys, which must be stamped with the
         // chain's time: the contact's first message is checked against its block time.
-        guard let now = await wallet.chainTime() else { throw ZignalError.walletCatchingUp }
+        guard let reading = await wallet.chainReading() else { throw ZignalError.walletCatchingUp }
         guard !isClosed else { throw CancellationError() }
         // Making an invite rotates the prekeys when they are due, which drops old ones, and an
         // invite made without that could carry prekeys too old to be answered. So no invite is
-        // made until this phone's clock agrees with the chain's time (see `ChainClock.agreed`).
-        guard let agreed = ChainClock.agreed(chain: now, phone: Date()) else {
+        // made while the chain's time doesn't match its block's height (see `ChainClock.agreed`).
+        guard let agreed = ChainClock.agreed(reading) else {
             if !clocksDisagree { clocksDisagree = true }
             throw ZignalError.clocksDisagree
         }
@@ -806,7 +817,6 @@ private struct LoadedProfile: @unchecked Sendable {
     let data: ProfileData
 
     static func load(keys: ProfileKeyset, store: ProfileStore) throws -> LoadedProfile {
-        let now = unixNow()
         var data: ProfileData
         let inbox: ZkwInbox
         let demo: ZkwInbox?
@@ -829,11 +839,12 @@ private struct LoadedProfile: @unchecked Sendable {
             // settings were in that file too, so it starts with the new-profile ones (Tor on).
             data = ProfileData(inbox: Data(), walletRestored: true,
                                walletSettings: WalletSettings.standard, walletDateNeeded: true)
-            inbox = try ZkwInbox(seed: keys.identitySeed, now: now)
+            // Prekeys stamped 0, as for a new profile (`emptyData`).
+            inbox = try ZkwInbox(seed: keys.identitySeed, now: 0)
             demo = nil
         }
-        // Prekeys rotate once the wallet knows the chain's time and the phone's clock agrees
-        // with it (`refreshFromWallet`, `makeInvite`), not here on the phone's date alone.
+        // Prekeys rotate once the wallet knows the chain's time and it matches its block's
+        // height (`refreshFromWallet`, `makeInvite`), never here on the phone's date.
         // Saving on every open re-seals all profile files, whichever profile was opened.
         try data.seal(inbox: inbox, demo: demo, keys: keys)
         try store.save(data, keys)

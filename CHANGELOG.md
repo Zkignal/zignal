@@ -11,6 +11,46 @@ the same commit.
 - There are no version numbers yet, so each entry names its commits. Dates are the commit
   dates as git records them.
 
+## 2026-11-26
+
+### Security
+- **The phone's date no longer decides anything.** Making an invite, rotating prekeys (which
+  drops old ones) and giving up on a transaction that couldn't be read used to wait until
+  the phone's clock agreed with the server's block time. They now wait only while that block
+  time is more than a day away from what its height says (`ChainClock.reading`,
+  `HeightClock`), and sending uses the height-checked time too. A phone with a wrong date no
+  longer pauses invites, and a phone wrong the same way as the server no longer hides a
+  lying server. The chat list's two warnings become one; Debug builds can show it with the
+  launch argument `-ZignalDebugServerTimesOff YES`.
+- **A block the height clock can't date gives no time.** Below its oldest anchor (June 2026,
+  older than Zignal) the clock had nothing to compare with and took the light server's block
+  time as it came, counted as matching; so did a time without a height. A server could set
+  the clock unchecked there, and a new wallet starts at the height its first server reports.
+  There is now no time at all for such a block (`HeightClock.reading`): sending and making
+  an invite wait as they do while the wallet catches up, and a transaction mined there is
+  never read. Heights above 32 bits, which no chain has, are refused before any arithmetic
+  (`HeightClock.maxHeight`). From two outside reviews.
+- **The light server's words are shown short, plain and as its own.** When the server
+  refuses a transaction, its message was shown as it came. It is now one line of plain
+  ASCII, at most 120 characters, in quotation marks after "The light server didn't accept
+  the message. Its answer:" (`ServerText`).
+- **A contact's address is fully checked before every send.** The address a contact sends
+  with their first message was checked by its characters only; an invite's has been fully
+  checked since `72ba91f`. `ContactAddress` now checks it before a message's keys move and
+  again where the transaction is made. From an outside review.
+- **New profiles don't stamp their first prekeys with the phone's date.** They are stamped 0
+  and replaced at the first chain time that matches its height, before any invite is made
+  from them.
+- **A lost first-launch setting no longer deletes the profiles.** The clean-up of what an
+  earlier install left in the Keychain ran whenever one setting read as unset, and removed
+  the vault and both profile files. It now runs only when there is no profile file
+  (`ProfileStore.hasProfileFiles`). 2 tests rewritten and 4 new (153 app tests).
+
+### Documentation
+- **The Logging note counts the crowd meter's lines.** The README said Debug builds print
+  two kinds of lines to Xcode's console; with the crowd meter there are three. From an
+  outside review.
+
 ## 2026-11-25
 
 ### Security
@@ -21,20 +61,20 @@ the same commit.
   upgrade sets; no phone clock, no network). A time more than a day off is replaced by the
   height's, the message is read as usual, and the chat list says the server's times don't
   match the chain. A test fails when an SDK update ships a newer checkpoint, so the clock's
-  anchor moves with it. From an outside review.
+  anchor moves with it. From an outside review. (`72ba91f`)
 - **An invite's address is fully checked before a chat starts.** Besides its characters, the
   SDK now decodes it: a mainnet Unified Address with the right checksum and an Orchard
   receiver (`ContactAddress`). A damaged address is refused on the Add contact screen
-  instead of failing at the first send after the contact was saved.
+  instead of failing at the first send after the contact was saved. (`72ba91f`)
 
 ### Fixed
 - **Starting the demo chat puts its keys back when the save fails** (a full disk), as
-  sending and accepting an invite already did.
+  sending and accepting an invite already did. (`72ba91f`)
 
 ### Added
 - **Network settings before "Find my funds".** A profile whose saved data wasn't on the
   phone can choose its server and the Tor setting before its wallet's first sync. 5 new
-  tests (149 app tests).
+  tests (149 app tests). (`72ba91f`)
 - **"Remind me in": a reminder after a length of time you pick.** The Reminder screen has a
   second part next to the daily reminder: a countdown set with two wheels (hours and
   minutes, from 1 minute to 23 hours 59 minutes) that fires once, or again every time that
@@ -64,11 +104,11 @@ the same commit.
   moved), the README, SECURITY.md and the Network screen say that this feed (the mempool
   stream, the same for every wallet) connects directly even with Tor on and stays open while
   the app is unlocked. It lets a message show up within seconds; routing it over Tor comes
-  with syncing over Tor.
+  with syncing over Tor. (`72ba91f`)
 - **Advisories brought up to date:** `url` 2.5.8 (RUSTSEC-2026-0592) in the SDK's lock and
   `paste` 1.0.15 in `zkw-ffi`'s are listed; ZIGNAL-PATCHES.md no longer says Tor is off by
   default. `zkw-ffi/build-ios.sh` builds with `--locked`, for iOS 17.0, and checks the
-  library's minimum iOS, as the SDK's build script does.
+  library's minimum iOS, as the SDK's build script does. (`72ba91f`)
 
 ## 2026-11-23
 
