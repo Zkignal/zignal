@@ -35,7 +35,8 @@ every change with its commits and gets an entry with each fix.
 
 | Date | Change | Why | Commits |
 |---|---|---|---|
-| Nov 26 | **Notes for Zcash developers.** [`docs/NOTES-FOR-ZCASH-DEVELOPERS.md`](docs/NOTES-FOR-ZCASH-DEVELOPERS.md): how crowded shielded blocks are (measured on mainnet), why a light server sets an app's clock and how the height clock checks it, what Tor covers in the Swift SDK and what it doesn't, running SDK 3.0.0 after NU7, and binary data in memos. | What building Zignal showed about the light-wallet stack can save other wallet and app developers the same work. |  |
+| Nov 26 | **A request that can't get through Tor says so.** With Tor on, a request that fails is never made directly instead; the app now says "Zignal couldn't reach the server over Tor..." where it used to say "Something went wrong". Save on the Reminder screen can't run twice, and changes nothing when notifications aren't allowed. | A fault reported in the Tor library this SDK copy uses can stop Tor from connecting for a while; a plain message tells the user it is Tor and to try again. The Reminder fixes are from an outside review. |  |
+| Nov 26 | **Notes for Zcash developers.** [`docs/NOTES-FOR-ZCASH-DEVELOPERS.md`](docs/NOTES-FOR-ZCASH-DEVELOPERS.md): how crowded shielded blocks are (measured on mainnet), why a light server sets an app's clock and how the height clock checks it, what Tor covers in the Swift SDK and what it doesn't, running SDK 3.0.0 after NU7, and binary data in memos. | What building Zignal showed about the light-wallet stack can save other wallet and app developers the same work. | `615f969` |
 | Nov 26 | **The phone's date no longer decides anything, and fixes from two reviews.** Making an invite, dropping old prekeys and giving up on a transaction that couldn't be read wait only while the server's block times don't match their height (the height clock), never on the phone's clock; sending uses the height-checked time. The chat list's two warnings become one: "This server's block times don't match the chain". A block the height clock can't date (below its oldest anchor, or with a height no chain has) gives no time: nothing is sent, read or dropped on it. What the light server says when it refuses a transaction is shown short, plain and as the server's answer. A contact's address is fully checked before every send. A new profile's first prekeys aren't stamped with the phone's date. The first-launch clean-up doesn't run when profile files exist. | A phone with a wrong date paused invites and clean-up, and a phone wrong the same way as a lying server let it through. A server could set the clock unchecked on a wallet below the oldest anchor, where it can also start a new wallet; its words were shown as they came; an address sent with a first message was checked by its characters only; a lost setting could have deleted both profiles. | `b650f2d` |
 | Nov 25 | **Fixes from an outside review.** Block times from the light server are checked against a clock worked out from block height alone (no phone clock); a time more than a day off is replaced by the height's and the chat list says so; an invite's address is fully checked (checksum, mainnet, Orchard receiver) before a chat starts; a restored profile can open Network settings before "Find my funds"; a failed save while starting the demo chat puts its keys back too. PRIVACY.md and the README name the wallet's live feed of new transactions, which connects directly even with Tor on. | A light server that dates a block weeks ahead could move the time messages are read at, and empty the app's replay records; a damaged address failed only at the first send; the first sync of a restored profile couldn't use a chosen server or Tor setting; the feed wasn't listed among the direct connections. | `72ba91f` |
 | Nov 25 | **"Remind me in": a reminder after a length of time you pick.** Next to the daily reminder, a countdown set with two wheels (hours and minutes) fires once, or again and again until it's turned off. Same words, "Zignal: Open to check", silent. | A time of day doesn't fit "check again in 10 minutes" or "every 2 hours". It's still a plain nudge made by the iPhone: no server, nothing checked in the background. | `d7e1793` |
@@ -90,7 +91,7 @@ Tested since the submission (November 1 to 20, iPhone, Zcash mainnet):
   real profile alone from a date. Funds came back, and messages went both ways with an
   iPhone.
 
-153 app tests and 2 UI tests pass.
+154 app tests and 2 UI tests pass.
 
 > **Upgrading from the Zecathon build:** a later version upgrades each profile's wallet
 > database. This can't be undone: an older build can't open it afterwards. Keep your 24-word
@@ -465,6 +466,10 @@ address and when, is a separate problem, and the app can only solve part of it.
   slower.
 - **Profiles made by earlier versions** keep the setting they had: Tor off unless it was
   turned on. Turn it on under Network.
+- **When Tor can't connect,** Zignal says so ("Zignal couldn't reach the server over
+  Tor...") and sends or fetches nothing another way. Try again later. One known cause,
+  reported in November 2026, is in the Tor library this SDK copy uses (Arti 0.43): see note
+  3 of the [notes for Zcash developers](docs/NOTES-FOR-ZCASH-DEVELOPERS.md).
 - **No wallet identifier:** until November 12, the wallet also sent all of its transparent
   addresses on every sync, directly even with Tor on, which let the server recognize the
   same wallet across IP addresses, VPN exits and Tor. Zignal uses shielded addresses only
@@ -565,7 +570,7 @@ binary, which stops working at NU7: without this step, Xcode reports the missing
 Run it again after pulling changes to `vendor/`.
 
 Then open `ios/Zignal/Zignal.xcodeproj`:
-- Cmd+U runs the 153 app tests and the 2 UI tests. They cover:
+- Cmd+U runs the 154 app tests and the 2 UI tests. They cover:
   - PIN rules and the wrong-PIN wait (the count starting over only after 2 hours with no wrong
     PIN, never with an unlock or a restart, and an unreadable counter), the three-PIN vault
     (duress and panic), the panic PIN never showing a recovery phrase, and a timing test for
@@ -601,9 +606,10 @@ Then open `ios/Zignal/Zignal.xcodeproj`:
     days ahead leaves an invite working), the height clock (its anchors are the SDK's
     checkpoints, its spacing, a block time far from its height replaced, a block it can't
     date left without a time), a new profile's first prekeys replaced at the first chain
-    time, the light server's words shown short and plain, the check for profile files before
-    the first-launch clean-up, a chat waiting for its first reply, and Zignal's copy cleared
-    within its 60 seconds even when the pasteboard's count has moved on;
+    time, the light server's words shown short and plain, a request that can't get through
+    Tor saying so, the check for profile files before the first-launch clean-up, a chat
+    waiting for its first reply, and Zignal's copy cleared within its 60 seconds even when
+    the pasteboard's count has moved on;
   - the privacy manifest and the recent checkpoint the app ships.
 - The Zcash SDK is a local package in `vendor/`. On the first build Xcode downloads its Swift
   dependencies (grpc-swift, SQLite.swift).
@@ -935,6 +941,7 @@ match the git history; the rows after October 28 were made on `dev`.
 | 2026-11-25 | `d7e1793` | `dev` and `main`: a reminder after a length of time, once or repeating |
 | 2026-11-25 | `72ba91f` | `dev` and `main`: block times checked against block height; fixes from an outside review (tag `private-testing-4`) |
 | 2026-11-26 | `b650f2d` | `dev`: the height clock instead of the phone's date; fixes from two reviews |
+| 2026-11-26 | `615f969` | `dev`: notes for Zcash developers |
 
 ## Credits
 

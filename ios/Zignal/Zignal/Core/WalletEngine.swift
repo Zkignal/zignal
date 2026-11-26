@@ -587,6 +587,32 @@ enum WalletShutdown {
     }
 }
 
+/// Whether an error from the SDK means that a request made over Tor didn't get through: Tor
+/// couldn't start or build a connection, or the server couldn't be reached through it. With
+/// Tor on, the SDK raises these and never makes the request directly instead, so the app says
+/// so in plain words (`ZignalError.torCantConnect`) and the user tries again later.
+enum TorTrouble {
+    static func isTor(_ error: Error) -> Bool {
+        guard let error = error as? ZcashError else { return false }
+        switch error {
+        case .rustTorClientInit, .rustTorClientGet, .rustTorIsolatedClient,
+             .rustTorConnectToLightwalletd, .rustTorLwdFetchTransaction, .rustTorLwdSubmit,
+             .rustTorLwdGetInfo, .rustTorLwdLatestBlockHeight, .rustTorLwdGetTreeState,
+             .rustTorHttpRequest, .torClientUnavailable:
+            return true
+        case .unknown(let inner), .serviceUnknownError(let inner):
+            return isTor(inner)
+        default:
+            return false
+        }
+    }
+
+    #if DEBUG
+    /// For the tests, which can't name the SDK's own error types. Not in Release builds.
+    static var sample: Error { ZcashError.rustTorLwdSubmit("") }
+    #endif
+}
+
 /// The full check of a contact's address, made when a chat starts from an invite and before
 /// every send (a contact who opens the chat sends their address with their first message).
 /// `PaymentRequest.isShieldedAddress` looks only at the characters; this also has the SDK decode

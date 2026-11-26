@@ -46,13 +46,27 @@ the same commit.
   the vault and both profile files. It now runs only when there is no profile file
   (`ProfileStore.hasProfileFiles`). 2 tests rewritten and 4 new (153 app tests). (`b650f2d`)
 
+### Fixed
+- **A request that can't get through Tor says so.** With Tor on, the SDK never makes a
+  failed request directly instead; it raises an error, which the app showed as "Something
+  went wrong. Please try again." It now says "Zignal couldn't reach the server over Tor.
+  Nothing was sent or fetched another way. Try again in a few minutes, or choose another
+  server under Network.", on a failed send and on the wallet's status line (`TorTrouble`).
+  One known cause is reported in the Tor library this SDK copy uses (Arti 0.43; note 3 of
+  `docs/NOTES-FOR-ZCASH-DEVELOPERS.md`).
+- **Save on the Reminder screen runs once and changes nothing without permission.** Save
+  could be tapped again while the first save was still running, and with notifications
+  turned off for Zignal it cleared the daily reminder before saying so. Save is now off
+  while a save runs, and whatever needs permission is set before anything is cleared. From
+  an outside review. 1 new test (154 app tests).
+
 ### Documentation
 - **Notes for Zcash developers** (`docs/NOTES-FOR-ZCASH-DEVELOPERS.md`): what building
   Zignal showed about the light-wallet stack. How crowded shielded blocks are, measured on
   mainnet (for cover fetches); how a light server sets block times and where a new wallet
   starts, and the height clock that checks it; what Tor covers in the Swift SDK and what it
   doesn't, and a Tor library version to check; SDK 3.0.0 after NU7, and where upstream work
-  continues; binary data in memos. The README's repository table lists `docs/`.
+  continues; binary data in memos. The README's repository table lists `docs/`. (`615f969`)
 - **The Logging note counts the crowd meter's lines.** The README said Debug builds print
   two kinds of lines to Xcode's console; with the crowd meter there are three. From an
   outside review. (`b650f2d`)

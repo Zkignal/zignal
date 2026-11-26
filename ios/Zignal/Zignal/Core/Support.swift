@@ -19,6 +19,8 @@ enum ZignalError: LocalizedError {
     case sendRejected(String)
     /// The light server's own words for refusing a transaction (shown through `ServerText`).
     case serverRefused(String)
+    /// A request that goes over Tor didn't get through (`TorTrouble`).
+    case torCantConnect
     case invalidInvite
     case ownInvite
     case inviteAlreadyUsed
@@ -42,6 +44,7 @@ enum ZignalError: LocalizedError {
             "Prepare needs at least \(String(format: "%.4f", Double(minimum) / 100_000_000)) ZEC that has confirmed. You can still send single messages without it."
         case .sendRejected(let reason): "The network didn't accept the message: \(reason)"
         case .serverRefused(let words): ServerText.refusal(words)
+        case .torCantConnect: "Zignal couldn't reach the server over Tor. Nothing was sent or fetched another way. Try again in a few minutes, or choose another server under Network."
         case .invalidInvite: "That isn't a valid Zignal invite. Check that you copied all of it."
         case .ownInvite: "That's your own invite. Share it with your contact instead."
         case .inviteAlreadyUsed: "You've already used this invite. An invite works only once: ask your contact for a new one if you need to start over."

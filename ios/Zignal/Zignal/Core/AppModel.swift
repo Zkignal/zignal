@@ -318,6 +318,10 @@ final class AppModel {
 
     static func describe(_ error: Error) -> String {
         if let error = error as? ZignalError, let text = error.errorDescription { return text }
+        // A request that couldn't get through Tor says so, in every build (`TorTrouble`).
+        if TorTrouble.isTor(error), let text = ZignalError.torCantConnect.errorDescription {
+            return text
+        }
         #if DEBUG
         return "Something went wrong (\(error))."
         #else

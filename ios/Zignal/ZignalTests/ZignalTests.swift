@@ -1470,6 +1470,22 @@ struct ServerTextTests {
     }
 }
 
+/// With Tor on, a request that can't get through is never made directly instead, and the app
+/// says what happened in plain words (`TorTrouble`).
+@MainActor
+struct TorTroubleTests {
+    @Test func aRequestThatCantGetThroughTorSaysSo() {
+        let words = "Zignal couldn't reach the server over Tor. Nothing was sent or fetched another way. Try again in a few minutes, or choose another server under Network."
+        #expect(ZignalError.torCantConnect.errorDescription == words)
+        #expect(TorTrouble.isTor(TorTrouble.sample))
+        #expect(AppModel.describe(TorTrouble.sample) == words)
+        // Other errors are described as before.
+        #expect(!TorTrouble.isTor(ZignalError.walletNotReady))
+        #expect(!TorTrouble.isTor(CancellationError()))
+        #expect(AppModel.describe(ZignalError.walletNotReady) == ZignalError.walletNotReady.errorDescription)
+    }
+}
+
 struct FirstReplyTests {
     @Test func aChatWaitsForItsFirstReply() {
         let peer = Data(repeating: 7, count: 32)

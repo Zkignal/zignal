@@ -14,6 +14,7 @@ struct ReminderView: View {
     @State private var pending: Reminder.PendingCountdown?
     @State private var loaded = false
     @State private var note: String?
+    @State private var saving = false
 
     var body: some View {
         NavigationStack {
@@ -64,7 +65,7 @@ struct ReminderView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(!loaded)
+                        .disabled(!loaded || saving)
                 }
             }
             .task {
@@ -104,6 +105,7 @@ struct ReminderView: View {
     }
 
     private func save() {
+        guard !saving else { return }
         note = nil
         let daily: Reminder.Time?
         if enabled {
@@ -125,26 +127,27 @@ struct ReminderView: View {
         }
         // A pending countdown that wasn't changed keeps running from when it was set.
         let restart = countdown != nil && countdown != pending?.countdown
+        // One save at a time: Save is off until this one has finished. What needs permission
+        // goes first, so when notifications aren't allowed nothing has been changed or
+        // cleared yet.
+        saving = true
         Task {
+            defer { saving = false }
             do {
                 if let daily {
                     guard try await Reminder.set(daily) else {
                         notAllowed()
                         return
                     }
-                } else {
-                    Reminder.clear()
                 }
-                if let countdown {
-                    if restart {
-                        guard try await Reminder.setCountdown(countdown) else {
-                            notAllowed()
-                            return
-                        }
+                if let countdown, restart {
+                    guard try await Reminder.setCountdown(countdown) else {
+                        notAllowed()
+                        return
                     }
-                } else {
-                    Reminder.clearCountdown()
                 }
+                if daily == nil { Reminder.clear() }
+                if countdown == nil { Reminder.clearCountdown() }
                 dismiss()
             } catch {
                 note = "The reminder couldn't be set. Try again."
